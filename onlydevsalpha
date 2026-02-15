@@ -1243,144 +1243,228 @@ end
 -- ==========================================
 local Afk = Window:CreateTab("Afk Fuse", 4483345998)
 
-Afk:CreateSection("Afk Fuse")
+-- Variables
+local selectedTime = 30
+local selectedMachine = "Default"
+local autoDeposit = false
+local autoCraft = false
+local countdown = 0
+local isProcessing = false
+local copiedItemID = nil
+local autoEquipEnabled = false
 
-_G.AutoAFK = false
-Player.Idled:Connect(function()
-    if _G.AutoAFK then
-        VirtualUser:Button2Down(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
-        task.wait(1)
-        VirtualUser:Button2Up(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
+-- Machine Names for Auto-Detection
+local machineNames = {"Atm", "Blackhole", "Arcade", "Valentines"}
+
+-- Coordinates
+local machineCoords = Vector3.new(897.34, -8.38, -23.02)
+local surfaceCoords = Vector3.new(125.89, 3.22, 0.72)
+local defaultBlinkCoords = Vector3.new(135.40, 3.22, 138.60)
+
+-- Helper: Create Platform
+local function createPlatform(pos)
+    if not workspace:FindFirstChild("AutoFarmPlatform") then
+        local plat = Instance.new("Part", workspace)
+        plat.Name = "AutoFarmPlatform"
+        plat.Size = Vector3.new(15, 1, 15)
+        plat.Position = pos - Vector3.new(0, 3.5, 0)
+        plat.Anchored = true
+        plat.Transparency = 0.5
+        plat.BrickColor = BrickColor.new("Neon orange")
+    end
+end
+
+-- Helper: Find Any Machine
+local function getActiveMachine()
+    local folder = workspace:WaitForChild("SpawnMachines")
+    if selectedMachine == "Default" then
+        return folder:FindFirstChild("Default")
+    elseif selectedMachine == "Auto-Detect Others" then
+        for _, name in ipairs(machineNames) do
+            local found = folder:FindFirstChild(name)
+            if found then return found end
+        end
+    else
+        return folder:FindFirstChild(selectedMachine)
+    end
+    return nil
+end
+
+-- Helper: Tween Functions
+local function tweenToMachine(targetPos)
+    local hrp = game.Players.LocalPlayer.Character:WaitForChild("HumanoidRootPart")
+    local ts = game:GetService("TweenService")
+    local info = TweenInfo.new(2, Enum.EasingStyle.Linear)
+    ts:Create(hrp, info, {CFrame = CFrame.new(hrp.Position.X, targetPos.Y, hrp.Position.Z)}):Play()
+    task.wait(2.1)
+    ts:Create(hrp, info, {CFrame = CFrame.new(targetPos)}):Play()
+    task.wait(2.1)
+end
+
+local function tweenToSurface(targetPos)
+    local hrp = game.Players.LocalPlayer.Character:WaitForChild("HumanoidRootPart")
+    local ts = game:GetService("TweenService")
+    local info = TweenInfo.new(2, Enum.EasingStyle.Linear)
+    ts:Create(hrp, info, {CFrame = CFrame.new(targetPos.X, hrp.Position.Y, targetPos.Z)}):Play()
+    task.wait(2.1)
+    ts:Create(hrp, info, {CFrame = CFrame.new(targetPos)}):Play()
+end
+
+local TimeLabel = Afk:CreateLabel("Next Cycle: Ready")
+
+-----------------------------------------------------------
+-- AUTO BRAINROT EQUIP UI
+-----------------------------------------------------------
+local IDLabel = Afk:CreateLabel("Current ID: None")
+
+Afk:CreateButton({
+    Name = "Copy Held Item ID",
+    Callback = function()
+        local tool = game.Players.LocalPlayer.Character:FindFirstChildOfClass("Tool")
+        if tool then 
+            copiedItemID = tool.Name 
+            IDLabel:Set("Current ID: "..tool.Name) 
+            setclipboard(tool.Name) 
+            Rayfield:Notify({Title = "ID Copied", Content = "Item: " .. tool.Name .. " copied to clipboard", Duration = 3})
+        else
+            Rayfield:Notify({Title = "Error", Content = "Please hold an item first!", Duration = 3})
+        end
+    end,
+})
+
+Afk:CreateToggle({
+    Name = "Auto Equip Item", 
+    CurrentValue = false, 
+    Callback = function(v) 
+        autoEquipEnabled = v 
+    end
+})
+
+-----------------------------------------------------------
+-- CORE AUTOMATION LOOP
+-----------------------------------------------------------
+spawn(function()
+    while task.wait(1) do
+        if autoDeposit or autoCraft then
+            if countdown <= 0 and not isProcessing then
+                local machineObj = getActiveMachine()
+                
+                -- Check if machine is missing
+                if not machineObj then
+                    TimeLabel:Set("Waiting for next event spawn machine...")
+                    continue -- Skip this loop iteration and check again in 1 second
+                end
+
+                isProcessing = true
+                
+                local remote = game:GetService("ReplicatedStorage"):WaitForChild("Packages"):WaitForChild("Net"):WaitForChild("RF/SpawnMachine.Action")
+                local hrp = game.Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+
+                if hrp then
+                    -- TRAVEL LOGIC
+                    if machineObj.Name == "Default" then
+                        hrp.CFrame = CFrame.new(defaultBlinkCoords)
+                        task.wait(0.5)
+                    else
+                        local dist = (hrp.Position - machineCoords).Magnitude
+                        if dist > 10 then
+                            TimeLabel:Set("Status: Traveling...")
+                            tweenToMachine(machineCoords)
+                        end
+                    end
+
+                    -- 1. DEPOSIT
+                    if autoDeposit then
+                        TimeLabel:Set("Status: Depositing...")
+                        pcall(function() remote:InvokeServer(unpack({"Deposit", machineObj})) end)
+                        task.wait(1.5)
+                    end
+
+                    -- 2. CRAFT
+                    if autoCraft then
+                        TimeLabel:Set("Status: Crafting...")
+                        pcall(function() remote:InvokeServer(unpack({"Combine", machineObj})) end)
+                        task.wait(2)
+                    end
+
+                    -- 3. START TIMER AFTER CRAFTING
+                    countdown = selectedTime
+                end
+                
+                isProcessing = false
+            elseif countdown > 0 then
+                countdown = countdown - 1
+                TimeLabel:Set(countdown >= 60 and "Next Cycle: "..math.floor(countdown/60).."m "..(countdown%60).."s" or "Next Cycle: "..countdown.."s")
+            else
+                -- If countdown is 0 but we aren't processing yet
+                TimeLabel:Set("Next Cycle: Ready")
+            end
+        else
+            TimeLabel:Set("Automation: Paused")
+            countdown = 0
+            isProcessing = false
+        end
     end
 end)
 
-Afk:CreateToggle({
-    Name = "Auto AFK (Anti-Idle Kick)",
-    CurrentValue = false,
-    Flag = "AutoAFKFlag",
-    Callback = function(Value) _G.AutoAFK = Value end,
-})
-
-Afk:CreateSection("ID Grabber & Auto-Equip")
-
-local ToolLabel = Afk:CreateLabel("Current Target: None")
-
-Afk:CreateButton({
-    Name = "Copy ID & Use Brainrot for Auto-Equip",
-    Callback = function()
-        local tool = Player.Character and Player.Character:FindFirstChildOfClass("Tool")
-        if tool then
-            TargetToolID = tool.Name
-            ToolLabel:Set("Current Target: " .. tool.Name)
-            Rayfield:Notify({Title = "Tool Saved!", Content = "Targeting: " .. tool.Name, Duration = 3})
-        else
-            Rayfield:Notify({Title = "Error", Content = "Hold an item first!", Duration = 3})
-        end
-    end,
-})
-
-Afk:CreateToggle({
-    Name = "Auto Equip Brainrot",
-    CurrentValue = false,
-    Callback = function(Value)
-        AutoEquipEnabled = Value
-        task.spawn(function()
-            while AutoEquipEnabled do
-                if TargetToolID and Player.Character then
-                    local tool = Player.Backpack:FindFirstChild(TargetToolID)
-                    if tool then Player.Character.Humanoid:EquipTool(tool) end
-                end
-                task.wait(1)
+-- Auto Equip Loop (Fast check)
+spawn(function()
+    while task.wait(0.5) do
+        if autoEquipEnabled and copiedItemID then
+            local p = game.Players.LocalPlayer
+            if p.Character and not p.Character:FindFirstChild(copiedItemID) then
+                local t = p.Backpack:FindFirstChild(copiedItemID)
+                if t then t.Parent = p.Character end
             end
-        end)
+        end
+    end
+end)
+
+-----------------------------------------------------------
+-- AUTOMATION SETTINGS UI
+-----------------------------------------------------------
+Afk:CreateDropdown({
+    Name = "Set Interval",
+    Options = {"30 Seconds", "1 Minute", "5 Minutes", "10 Minutes", "20 Minutes", "30 Minutes", "45 Minutes", "60 Minutes"},
+    CurrentOption = {"30 Seconds"},
+    Callback = function(Option)
+        local times = {["30 Seconds"]=30,["1 Minute"]=60,["5 Minutes"]=300,["10 Minutes"]=600,["20 Minutes"]=1200,["30 Minutes"]=1800,["45 Minutes"]=2700,["60 Minutes"]=3600}
+        selectedTime = times[Option[1]] or 30
+        countdown = 0
     end,
 })
-
-Afk:CreateSection("Auto Spawn Machine")
 
 Afk:CreateDropdown({
-    Name = "Select Machine",
-    Options = {"Default", "ATM", "Blackhole", "Arcade", "Valentines"}, 
+    Name = "Select Machine Mode",
+    Options = {"Default", "Auto-Detect Others", "Atm", "Blackhole", "Arcade", "Valentines"},
     CurrentOption = {"Default"},
-    Callback = function(Option) SelectedMachineName = Option[1] end,
-})
-
-local TimerLabel = Afk:CreateLabel("Next Craft: Ready")
-
--- Helper function for MM:SS formatting
-local function formatTime(seconds)
-    local mins = math.floor(seconds / 60)
-    local secs = seconds % 60
-    return string.format("%02d:%02d", mins, secs)
-end
-
-Afk:CreateToggle({
-    Name = "Auto Deposit (AFK)",
-    CurrentValue = false,
-    Callback = function(Value)
-        AutoDepositEnabled = Value
-        task.spawn(function()
-            while AutoDepositEnabled do
-                if typeof(fireMachineRemote) == "function" then
-                    fireMachineRemote("ProximityPrompt")
-                end
-                
-                local waitTime = CraftCooldown or 30
-                task.wait(waitTime)
-            end
-        end)
-    end,
+    Callback = function(Option) selectedMachine = Option[1] end,
 })
 
 Afk:CreateToggle({
-    Name = "Auto Craft (AFK)",
+    Name = "Auto Deposit",
     CurrentValue = false,
-    Callback = function(Value)
-        AutoCraftEnabled = Value
-        task.spawn(function()
-            while AutoCraftEnabled do
-                local machine = workspace.SpawnMachines:FindFirstChild(SelectedMachineName)
-                local root = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
-                
-                if machine and root then
-                    local oldPos = root.CFrame
-                    -- Teleports 5 studs backwards relative to the machine's CFrame
-                    root.CFrame = machine.Main.CFrame * CFrame.new(0, 0, 5)
-                    task.wait(0.3)
-                    
-                    pcall(function()
-                        game:GetService("ReplicatedStorage").Packages.Net["RF/SpawnMachine.Action"]:InvokeServer("Combine", machine)
-                    end)
-
-                    task.wait(0.2)
-                    root.CFrame = oldPos
-                    
-                    -- Countdown Loop
-                    local timeLeft = CraftCooldown or 30
-                    while timeLeft > 0 and AutoCraftEnabled do
-                        TimerLabel:Set("Next Craft in: " .. formatTime(timeLeft))
-                        task.wait(1)
-                        timeLeft = timeLeft - 1
-                    end
-                    TimerLabel:Set("Status: Crafting...")
-                else
-                    TimerLabel:Set("Status: Machine Not Found")
-                    task.wait(1)
-                end
-            end
-            TimerLabel:Set("Next Craft: Ready")
-        end)
+    Callback = function(v) 
+        autoDeposit = v 
+        if v then createPlatform(machineCoords) end 
     end,
 })
+
+Afk:CreateToggle({Name = "Auto Craft", CurrentValue = false, Callback = function(v) autoCraft = v end})
 
 Afk:CreateButton({
     Name = "Withdraw All Brainrots",
-    Callback = function() 
-        if typeof(fireMachineRemote) == "function" then
-            fireMachineRemote(3) 
+    Callback = function()
+        local m = getActiveMachine()
+        if m then
+            game:GetService("ReplicatedStorage"):WaitForChild("Packages"):WaitForChild("Net"):WaitForChild("RF/SpawnMachine.Action"):InvokeServer(unpack({"Withdraw", m}))
+        else
+            Rayfield:Notify({Title = "Error", Content = "Machine not found to withdraw from.", Duration = 3})
         end
     end,
 })
+
+Afk:CreateButton({Name = "Go to Surface", Callback = function() tweenToSurface(surfaceCoords) end})
 
 local SettingsTab = Window:CreateTab("Settings", 4483345998)
 SettingsTab:CreateButton({
