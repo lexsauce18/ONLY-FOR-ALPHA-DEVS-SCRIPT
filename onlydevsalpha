@@ -579,204 +579,6 @@ GameTab:CreateToggle({
 -- ==========================================
 local Automation = Window:CreateTab("Automation", 4483345998)
 
---------------------------------------------------------------------------------
--- // CONFIGURATION (Internal Defaults) //
---------------------------------------------------------------------------------
-getgenv().AutoCollect = false
-getgenv().SelectedRarities = {} 
-getgenv().TsunamiSafeDistance = 100 
-getgenv().CollectionDelay = 0.5     
-local SafeYHeight = -50 
-
-local HistoryLog = {} 
-local HistoryParagraph = nil 
-local StatusLabel = nil
-
---------------------------------------------------------------------------------
--- // FUNCTIONS //
---------------------------------------------------------------------------------
-
-local function GetCustomSpeed()
-    local success, speed = pcall(function()
-        local player = Players.LocalPlayer
-        local speedObj = player.PlayerGui.HUD.BottomLeft.PlayerSpeed.Speed
-        local rawVal = (speedObj:IsA("TextLabel") or speedObj:IsA("TextBox")) and speedObj.Text or speedObj.Value
-        return tonumber(string.match(tostring(rawVal), "%d+"))
-    end)
-    if success and speed and speed > 0 then return speed end
-    return 16 
-end
-
-local function IsTsunamiNear(targetPosition)
-    local tsunamiFolder = workspace:FindFirstChild("ActiveTsunamis")
-    if not tsunamiFolder then return false end
-    for _, tsunami in pairs(tsunamiFolder:GetChildren()) do
-        local tPos = tsunami:IsA("Model") and tsunami:GetPivot().Position or (tsunami:IsA("BasePart") and tsunami.Position)
-        if tPos then
-            local dist = (Vector3.new(tPos.X, 0, tPos.Z) - Vector3.new(targetPosition.X, 0, targetPosition.Z)).Magnitude
-            if dist < getgenv().TsunamiSafeDistance then return true end
-        end
-    end
-    return false 
-end
-
-local function AddToHistory(rarityName)
-    local timeStr = os.date("%X")
-    local logEntry = "• [" .. timeStr .. "] " .. rarityName
-    table.insert(HistoryLog, 1, logEntry)
-    if #HistoryLog > 10 then table.remove(HistoryLog, #HistoryLog) end
-    if HistoryParagraph then HistoryParagraph:Set({Title = "Collection History", Content = table.concat(HistoryLog, "\n")}) end
-end
-
--- UPDATED: Flexible Name Detection
-local function ProcessBlock(block)
-    if not getgenv().AutoCollect then return end
-    
-    local targetRarityName = ""
-    local blockName = block.Name:lower() -- Lowercase for easier matching
-    
-    for _, rarity in pairs(getgenv().SelectedRarities) do
-        -- Checks if the rarity string exists anywhere in the block's name
-        if string.find(blockName, rarity:lower()) then
-            targetRarityName = rarity
-            break
-        end
-    end
-
-    if targetRarityName ~= "" then
-        local player = Players.LocalPlayer
-        local character = player.Character
-        local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-        
-        -- Use WaitForChild in case the block parts haven't loaded yet
-        local targetPart = block:WaitForChild("RootPart", 3)
-        local prompt = targetPart and targetPart:WaitForChild("ProximityPrompt", 3)
-
-        if rootPart and targetPart and prompt then
-            local startPos = rootPart.Position
-            local targetPos = targetPart.Position
-            
-            StatusLabel:Set("Status: Target Found (" .. targetRarityName .. ")")
-            
-            -- DIP & TWEEN
-            if rootPart.Position.Y > SafeYHeight + 5 then
-                rootPart.CFrame = CFrame.new(rootPart.Position.X, SafeYHeight, rootPart.Position.Z)
-                task.wait(0.1)
-            end
-            
-            local destToBlock = Vector3.new(targetPos.X, SafeYHeight, targetPos.Z)
-            local distToBlock = (destToBlock - rootPart.Position).Magnitude
-            local speed = GetCustomSpeed()
-            
-            local tween1 = TweenService:Create(rootPart, TweenInfo.new(distToBlock / speed, Enum.EasingStyle.Linear), {CFrame = CFrame.new(destToBlock)})
-            tween1:Play()
-            tween1.Completed:Wait()
-            
-            -- SAFETY CHECK
-            while IsTsunamiNear(targetPos) and getgenv().AutoCollect do
-                StatusLabel:Set("Status: ⚠️ Tsunami - Holding...")
-                rootPart.CFrame = CFrame.new(destToBlock)
-                task.wait(0.1)
-            end
-            
-            -- COLLECT
-            if getgenv().AutoCollect and block.Parent then
-                StatusLabel:Set("Status: Collecting " .. targetRarityName .. "...")
-                rootPart.CFrame = CFrame.new(targetPos + Vector3.new(0, 3, 0))
-                
-                local startTime = tick()
-                while (tick() - startTime) < getgenv().CollectionDelay do
-                    if not block.Parent then break end
-                    rootPart.CFrame = CFrame.new(targetPos + Vector3.new(0, 3, 0))
-                    rootPart.Velocity = Vector3.zero
-                    
-                    prompt.HoldDuration = 0
-                    prompt.MaxActivationDistance = 200
-                    if fireproximityprompt then fireproximityprompt(prompt) end
-                    
-                    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-                    task.wait(0.05)
-                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
-                end
-
-                -- RETURN
-                rootPart.CFrame = CFrame.new(targetPos.X, SafeYHeight, targetPos.Z)
-                local destToStart = Vector3.new(startPos.X, SafeYHeight, startPos.Z)
-                local distToStart = (destToStart - rootPart.Position).Magnitude
-                local tween2 = TweenService:Create(rootPart, TweenInfo.new(distToStart / speed, Enum.EasingStyle.Linear), {CFrame = CFrame.new(destToStart)})
-                tween2:Play()
-                tween2.Completed:Wait()
-                rootPart.CFrame = CFrame.new(startPos)
-
-                if not block.Parent then
-                    Rayfield:Notify({Title = "Success", Content = "Collected " .. targetRarityName, Duration = 3, Image = 4483362458})
-                    AddToHistory(targetRarityName)
-                end
-            end
-        end
-    end
-end
-
---------------------------------------------------------------------------------
--- // UI ELEMENTS //
---------------------------------------------------------------------------------
-
-local Section = Automation:CreateSection("Status & Settings")
-StatusLabel = Automation:CreateLabel("Status: Idle")
-
--- CONTINUOUS LISTENER
-task.spawn(function()
-    local blockFolder = workspace:WaitForChild("ActiveLuckyBlocks", 10)
-    if blockFolder then
-        blockFolder.ChildAdded:Connect(function(child)
-            if getgenv().AutoCollect then
-                task.wait(0.1) -- Small delay to ensure block is fully initialized
-                ProcessBlock(child)
-            end
-        end)
-    end
-end)
-
-local RarityDropdown = Automation:CreateDropdown({
-   Name = "Select Rarities",
-   Options = {
-       "Common", "Uncommon", "Rare", "Epic", "Legendary", 
-       "Mythical", "Cosmic", "Secret", "Celestial", "Divine", "Infinity"
-   },
-   CurrentOption = {"Common"},
-   MultipleOptions = true,
-   Flag = "RarityDropdown",
-   Callback = function(Options) getgenv().SelectedRarities = Options end,
-})
-
-local Toggle = Automation:CreateToggle({
-   Name = "Enable Auto Collect",
-   CurrentValue = false,
-   Flag = "AutoCollectLucky",
-   Callback = function(Value)
-      getgenv().AutoCollect = Value
-      
-      if Value then
-          task.spawn(function()
-             while getgenv().AutoCollect do
-                StatusLabel:Set("Status: Scanning...")
-                local blockFolder = workspace:FindFirstChild("ActiveLuckyBlocks")
-                if blockFolder then
-                   for _, block in pairs(blockFolder:GetChildren()) do
-                       if not getgenv().AutoCollect then break end
-                       ProcessBlock(block)
-                   end
-                end
-                task.wait(2) 
-             end
-             StatusLabel:Set("Status: Idle")
-          end)
-      else
-          StatusLabel:Set("Status: Idle")
-      end
-   end,
-})
-
 -- Feature Logic Variables
 local AutoCollect = false
 
@@ -1452,35 +1254,48 @@ local isProcessing = false
 local copiedItemID = nil
 local autoEquipEnabled = false
 
--- Machine Names for Auto-Detection
+-- Machine Names for Auto-Detection (REMOVED "Default" FROM THIS LIST)
 local machineNames = {"ATM", "Blackhole", "Arcade", "Valentines"}
 
 -- Coordinates
 local machineCoords = Vector3.new(897.34, -8.38, -23.02)
-local atmCoords = Vector3.new(897.96, -8.38, 27.33) -- Y matched to machineCoords (-8.38)
+local atmCoords = Vector3.new(897.96, -8.38, 27.33) 
 local surfaceCoords = Vector3.new(125.89, 3.22, 0.72)
 local defaultBlinkCoords = Vector3.new(135.40, 3.22, 138.60)
 
--- Helper: Create Platform (Updated to handle repositioning)
-local function createPlatform(pos)
-    local existing = workspace:FindFirstChild("AutoFarmPlatform")
-    if existing then existing:Destroy() end
-    
-    local plat = Instance.new("Part", workspace)
-    plat.Name = "AutoFarmPlatform"
-    plat.Size = Vector3.new(15, 1, 15)
-    plat.Position = pos - Vector3.new(0, 3.5, 0)
-    plat.Anchored = true
-    plat.Transparency = 0.5
-    plat.BrickColor = BrickColor.new("Neon orange")
+-- Helper: Create Static Platforms
+local function setupStaticPlatforms()
+    if workspace:FindFirstChild("ATM_Platform") then workspace.ATM_Platform:Destroy() end
+    if workspace:FindFirstChild("Machine_Platform") then workspace.Machine_Platform:Destroy() end
+
+    -- Create ATM Platform
+    local platATM = Instance.new("Part")
+    platATM.Name = "ATM_Platform"
+    platATM.Parent = workspace
+    platATM.Size = Vector3.new(15, 1, 15)
+    platATM.Position = atmCoords - Vector3.new(0, 3.5, 0)
+    platATM.Anchored = true
+    platATM.Transparency = 0.5
+    platATM.BrickColor = BrickColor.new("Cyan")
+    platATM.CanCollide = true
+
+    -- Create Main Machine Platform
+    local platMachine = Instance.new("Part")
+    platMachine.Name = "Machine_Platform"
+    platMachine.Parent = workspace
+    platMachine.Size = Vector3.new(15, 1, 15)
+    platMachine.Position = machineCoords - Vector3.new(0, 3.5, 0)
+    platMachine.Anchored = true
+    platMachine.Transparency = 0.5
+    platMachine.BrickColor = BrickColor.new("Neon orange")
+    platMachine.CanCollide = true
 end
 
--- Helper: Find Any Machine
+-- Helper: Find Any Machine 
 local function getActiveMachine()
     local folder = workspace:WaitForChild("SpawnMachines")
-    if selectedMachine == "Default" then
-        return folder:FindFirstChild("Default")
-    elseif selectedMachine == "Auto-Detect Others" then
+    
+    if selectedMachine == "All Machine" or selectedMachine == "Auto-Detect Others" then
         for _, name in ipairs(machineNames) do
             local found = folder:FindFirstChild(name)
             if found then return found end
@@ -1563,15 +1378,8 @@ spawn(function()
                 local hrp = game.Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
 
                 if hrp then
-                    -- DETERMINE TARGET COORDINATES
                     local targetPos = (machineObj.Name == "ATM") and atmCoords or machineCoords
                     
-                    -- Platform Management (Ensure platform is at the correct machine)
-                    if autoDeposit then
-                        createPlatform(targetPos)
-                    end
-
-                    -- TRAVEL LOGIC
                     if machineObj.Name == "Default" then
                         hrp.CFrame = CFrame.new(defaultBlinkCoords)
                         task.wait(0.5)
@@ -1583,14 +1391,12 @@ spawn(function()
                         end
                     end
 
-                    -- 1. DEPOSIT
                     if autoDeposit then
                         TimeLabel:Set("Status: Depositing...")
                         pcall(function() remote:InvokeServer(unpack({"Deposit", machineObj})) end)
                         task.wait(1.5)
                     end
 
-                    -- 2. CRAFT
                     if autoCraft then
                         TimeLabel:Set("Status: Crafting...")
                         pcall(function() remote:InvokeServer(unpack({"Combine", machineObj})) end)
@@ -1611,7 +1417,6 @@ spawn(function()
             TimeLabel:Set("Automation: Paused")
             countdown = 0
             isProcessing = false
-            if workspace:FindFirstChild("AutoFarmPlatform") then workspace.AutoFarmPlatform:Destroy() end
         end
     end
 end)
@@ -1650,21 +1455,7 @@ Afk:CreateDropdown({
     Callback = function(Option) selectedMachine = Option[1] end,
 })
 
-Afk:CreateToggle({
-    Name = "Auto Deposit",
-    CurrentValue = false,
-    Callback = function(v) 
-        autoDeposit = v 
-        if v then 
-            local machineObj = getActiveMachine()
-            local pos = (machineObj and machineObj.Name == "ATM") and atmCoords or machineCoords
-            createPlatform(pos) 
-        else
-            if workspace:FindFirstChild("AutoFarmPlatform") then workspace.AutoFarmPlatform:Destroy() end
-        end 
-    end,
-})
-
+Afk:CreateToggle({Name = "Auto Deposit", CurrentValue = false, Callback = function(v) autoDeposit = v end})
 Afk:CreateToggle({Name = "Auto Craft", CurrentValue = false, Callback = function(v) autoCraft = v end})
 
 Afk:CreateButton({
@@ -1680,6 +1471,9 @@ Afk:CreateButton({
 })
 
 Afk:CreateButton({Name = "Go to Surface", Callback = function() tweenToSurface(surfaceCoords) end})
+
+-- AUTOMATIC SETUP ON EXECUTION
+setupStaticPlatforms()
 
 local SettingsTab = Window:CreateTab("Settings", 4483345998)
 SettingsTab:CreateButton({
