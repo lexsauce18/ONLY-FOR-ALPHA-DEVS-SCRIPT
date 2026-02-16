@@ -645,7 +645,8 @@ local RarityDropdown = Automation:CreateDropdown({
    Name = "Select Rarities",
    Options = {
        "Common", "Uncommon", "Rare", "Epic", "Legendary", 
-       "Mythical", "Cosmic", "Secret", "Celestial", "Divine", "Infinity"
+       "Mythical", "Cosmic", "Secret", "Celestial", "Divine", "Infinity",
+       "Gamer", "Ufo", "Admin", "Radioactive", "Candy", "Money"
    },
    CurrentOption = {"Common"},
    MultipleOptions = true,
@@ -672,7 +673,7 @@ local Toggle = Automation:CreateToggle({
                 local character = player.Character or player.CharacterAdded:Wait()
                 local rootPart = character:WaitForChild("HumanoidRootPart")
                 
-                -- 1. SCANNING (Updated to detect Natural and Event spawns)
+                -- 1. SCANNING
                 local blockFolder = workspace:FindFirstChild("ActiveLuckyBlocks")
                 local foundBlock = nil
                 local targetRarityName = ""
@@ -680,7 +681,7 @@ local Toggle = Automation:CreateToggle({
                 if blockFolder then
                    for _, block in pairs(blockFolder:GetChildren()) do
                       for _, rarity in pairs(getgenv().SelectedRarities) do
-                         -- Checks if the block name ends with the rarity (e.g., EventSpawnLuckyBlock_Legendary)
+                         -- Detection pattern updated to catch both Natural and Event spawns
                          if string.match(block.Name, "_" .. rarity .. "$") then
                             foundBlock = block
                             targetRarityName = rarity
