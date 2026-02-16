@@ -579,6 +579,220 @@ GameTab:CreateToggle({
 -- ==========================================
 local Automation = Window:CreateTab("Automation", 4483345998)
 
+local TweenService = game:GetService("TweenService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+--------------------------------------------------------------------------------
+-- // CONFIGURATION (Internal Defaults) //
+--------------------------------------------------------------------------------
+getgenv().AutoCollect = false
+getgenv().SelectedRarities = {} 
+getgenv().TsunamiSafeDistance = 100  -- CHANGED: Default 100
+getgenv().CollectionDelay = 0.5      -- CHANGED: Default 0.5
+local SafeYHeight = -50 
+
+local HistoryLog = {} 
+local HistoryParagraph = nil 
+local StatusLabel = nil
+
+--------------------------------------------------------------------------------
+-- // FUNCTIONS //
+--------------------------------------------------------------------------------
+
+local function GetCustomSpeed()
+    local success, speed = pcall(function()
+        local player = Players.LocalPlayer
+        local speedObj = player.PlayerGui.HUD.BottomLeft.PlayerSpeed.Speed
+        local rawVal = (speedObj:IsA("TextLabel") or speedObj:IsA("TextBox")) and speedObj.Text or speedObj.Value
+        return tonumber(string.match(tostring(rawVal), "%d+"))
+    end)
+    if success and speed and speed > 0 then return speed end
+    return 16 
+end
+
+local function IsTsunamiNear(targetPosition)
+    local tsunamiFolder = workspace:FindFirstChild("ActiveTsunamis")
+    if not tsunamiFolder then return false end
+    for _, tsunami in pairs(tsunamiFolder:GetChildren()) do
+        local tPos = tsunami:IsA("Model") and tsunami:GetPivot().Position or (tsunami:IsA("BasePart") and tsunami.Position)
+        if tPos then
+            -- Check horizontal distance only
+            local dist = (Vector3.new(tPos.X, 0, tPos.Z) - Vector3.new(targetPosition.X, 0, targetPosition.Z)).Magnitude
+            if dist < getgenv().TsunamiSafeDistance then return true end
+        end
+    end
+    return false 
+end
+
+local function AddToHistory(rarityName)
+    local timeStr = os.date("%X")
+    local logEntry = "• [" .. timeStr .. "] " .. rarityName
+    table.insert(HistoryLog, 1, logEntry)
+    if #HistoryLog > 10 then table.remove(HistoryLog, #HistoryLog) end
+    if HistoryParagraph then HistoryParagraph:Set({Title = "Collection History", Content = table.concat(HistoryLog, "\n")}) end
+end
+
+--------------------------------------------------------------------------------
+-- // UI ELEMENTS //
+--------------------------------------------------------------------------------
+
+local Section = Automation:CreateSection("Status & Settings")
+StatusLabel = Automation:CreateLabel("Status: Idle")
+
+local RarityDropdown = Automation:CreateDropdown({
+   Name = "Select Rarities",
+   Options = {
+       "Common", "Uncommon", "Rare", "Epic", "Legendary", 
+       "Mythical", "Cosmic", "Secret", "Celestial", "Divine", "Infinity"
+   },
+   CurrentOption = {"Common"},
+   MultipleOptions = true,
+   Flag = "RarityDropdown",
+   Callback = function(Options) getgenv().SelectedRarities = Options end,
+})
+
+-- Sliders removed as requested.
+
+local Toggle = Automation:CreateToggle({
+   Name = "Enable Auto Collect",
+   CurrentValue = false,
+   Flag = "AutoCollectLucky",
+   Callback = function(Value)
+      getgenv().AutoCollect = Value
+      
+      if Value then
+          task.spawn(function()
+             while getgenv().AutoCollect do
+                StatusLabel:Set("Status: Scanning...")
+                task.wait(0.1) 
+                
+                local player = Players.LocalPlayer
+                local character = player.Character or player.CharacterAdded:Wait()
+                local rootPart = character:WaitForChild("HumanoidRootPart")
+                
+                -- 1. SCANNING (Updated to detect Natural and Event spawns)
+                local blockFolder = workspace:FindFirstChild("ActiveLuckyBlocks")
+                local foundBlock = nil
+                local targetRarityName = ""
+                
+                if blockFolder then
+                   for _, block in pairs(blockFolder:GetChildren()) do
+                      for _, rarity in pairs(getgenv().SelectedRarities) do
+                         -- Checks if the block name ends with the rarity (e.g., EventSpawnLuckyBlock_Legendary)
+                         if string.match(block.Name, "_" .. rarity .. "$") then
+                            foundBlock = block
+                            targetRarityName = rarity
+                            break 
+                         end
+                      end
+                      if foundBlock then break end 
+                   end
+                end
+                
+                -- 2. FOUND TARGET
+                if foundBlock then
+                   local targetPart = foundBlock:FindFirstChild("RootPart")
+                   local prompt = targetPart and targetPart:FindFirstChild("ProximityPrompt")
+
+                   if targetPart and prompt then
+                       local startPos = rootPart.Position
+                       local targetPos = targetPart.Position
+                       
+                       StatusLabel:Set("Status: Traveling to " .. targetRarityName .. "...")
+                       
+                       -- A. DIP & TWEEN TO BLOCK
+                       if rootPart.Position.Y > SafeYHeight + 5 then
+                           rootPart.CFrame = CFrame.new(rootPart.Position.X, SafeYHeight, rootPart.Position.Z)
+                           task.wait(0.1)
+                       end
+                       
+                       local destToBlock = Vector3.new(targetPos.X, SafeYHeight, targetPos.Z)
+                       local distToBlock = (destToBlock - rootPart.Position).Magnitude
+                       local speed = GetCustomSpeed()
+                       
+                       local tween1 = TweenService:Create(rootPart, TweenInfo.new(distToBlock / speed, Enum.EasingStyle.Linear), {CFrame = CFrame.new(destToBlock)})
+                       tween1:Play()
+                       tween1.Completed:Wait()
+                       
+                       -- B. TSUNAMI SAFETY CHECK
+                       while IsTsunamiNear(targetPos) and getgenv().AutoCollect do
+                           StatusLabel:Set("Status: ⚠️ Waiting for Tsunami (" .. getgenv().TsunamiSafeDistance .. "s)...")
+                           rootPart.CFrame = CFrame.new(destToBlock) 
+                           rootPart.Velocity = Vector3.zero
+                           task.wait(0.1) 
+                       end
+                       
+                       -- C. POP UP & COLLECT (0.5s Timer)
+                       if getgenv().AutoCollect and foundBlock.Parent and prompt.Parent then
+                          StatusLabel:Set("Status: Collecting " .. targetRarityName .. "...")
+                          
+                          rootPart.CFrame = CFrame.new(targetPos + Vector3.new(0, 3, 0))
+                          
+                          local startTime = tick()
+                          local waitTime = getgenv().CollectionDelay -- Uses 0.5 default
+                          
+                          while (tick() - startTime) < waitTime do
+                              if not foundBlock.Parent then break end 
+                              
+                              rootPart.CFrame = CFrame.new(targetPos + Vector3.new(0, 3, 0))
+                              rootPart.Velocity = Vector3.zero
+                              
+                              prompt.HoldDuration = 0 
+                              prompt.MaxActivationDistance = 200
+                              prompt.RequiresLineOfSight = false
+                              
+                              if fireproximityprompt then
+                                  fireproximityprompt(prompt)
+                              end
+                              
+                              VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+                              task.wait(0.05) 
+                              VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+                          end
+                          
+                          -- D. DIP BACK DOWN
+                          rootPart.CFrame = CFrame.new(targetPos.X, SafeYHeight, targetPos.Z)
+                          
+                          StatusLabel:Set("Status: Returning to Start...")
+                          
+                          -- E. TWEEN HOME
+                          local destToStart = Vector3.new(startPos.X, SafeYHeight, startPos.Z)
+                          local distToStart = (destToStart - rootPart.Position).Magnitude
+                          speed = GetCustomSpeed()
+                          
+                          local tween2 = TweenService:Create(rootPart, TweenInfo.new(distToStart / speed, Enum.EasingStyle.Linear), {CFrame = CFrame.new(destToStart)})
+                          tween2:Play()
+                          tween2.Completed:Wait()
+                          
+                          -- F. FINISH
+                          rootPart.CFrame = CFrame.new(startPos)
+                          
+                          if not foundBlock.Parent then
+                              Rayfield:Notify({Title = "Block Secured!", Content = "Collected: " .. targetRarityName, Duration = 3, Image = 4483362458})
+                              AddToHistory(targetRarityName)
+                          else
+                              Rayfield:Notify({Title = "Timed Out", Content = "Failed to grab " .. targetRarityName, Duration = 3, Image = 4483362458})
+                          end
+                          
+                          StatusLabel:Set("Status: Cooldown...")
+                          task.wait(1) 
+                       end
+                   end
+                end
+             end
+             StatusLabel:Set("Status: Idle")
+          end)
+       else
+          StatusLabel:Set("Status: Idle")
+       end
+    end,
+})
+
+local Section3 = Automation:CreateSection("History Log")
+HistoryParagraph = Automation:CreateParagraph({Title = "Collection History", Content = "Waiting for drops..."})
+
 -- Feature Logic Variables
 local AutoCollect = false
 
