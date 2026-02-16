@@ -1457,27 +1457,22 @@ local machineNames = {"ATM", "Blackhole", "Arcade", "Valentines"}
 
 -- Coordinates
 local machineCoords = Vector3.new(897.34, -8.38, -23.02)
-local atmCoords = Vector3.new(897.96, -8.39, 27.33)
+local atmCoords = Vector3.new(897.96, -8.38, 27.33) -- Y matched to machineCoords (-8.38)
 local surfaceCoords = Vector3.new(125.89, 3.22, 0.72)
 local defaultBlinkCoords = Vector3.new(135.40, 3.22, 138.60)
 
--- Helper: Create/Manage Following Platform
-local function updatePlatform()
-    local hrp = game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-
-    local plat = workspace:FindFirstChild("AutoFarmPlatform")
-    if not plat then
-        plat = Instance.new("Part", workspace)
-        plat.Name = "AutoFarmPlatform"
-        plat.Size = Vector3.new(15, 1, 15)
-        plat.Anchored = true
-        plat.Transparency = 0.5
-        plat.BrickColor = BrickColor.new("Neon orange")
-        plat.CanCollide = true
-    end
-    -- Keep platform 3.5 studs below the player at all times
-    plat.CFrame = hrp.CFrame * CFrame.new(0, -3.5, 0)
+-- Helper: Create Platform (Updated to handle repositioning)
+local function createPlatform(pos)
+    local existing = workspace:FindFirstChild("AutoFarmPlatform")
+    if existing then existing:Destroy() end
+    
+    local plat = Instance.new("Part", workspace)
+    plat.Name = "AutoFarmPlatform"
+    plat.Size = Vector3.new(15, 1, 15)
+    plat.Position = pos - Vector3.new(0, 3.5, 0)
+    plat.Anchored = true
+    plat.Transparency = 0.5
+    plat.BrickColor = BrickColor.new("Neon orange")
 end
 
 -- Helper: Find Any Machine
@@ -1552,11 +1547,8 @@ Afk:CreateToggle({
 -- CORE AUTOMATION LOOP
 -----------------------------------------------------------
 spawn(function()
-    while task.wait(0.1) do -- Faster wait to keep platform updated
+    while task.wait(1) do
         if autoDeposit or autoCraft then
-            -- Logic to move the platform under the player while active
-            updatePlatform()
-
             if countdown <= 0 and not isProcessing then
                 local machineObj = getActiveMachine()
                 
@@ -1571,8 +1563,15 @@ spawn(function()
                 local hrp = game.Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
 
                 if hrp then
+                    -- DETERMINE TARGET COORDINATES
                     local targetPos = (machineObj.Name == "ATM") and atmCoords or machineCoords
+                    
+                    -- Platform Management (Ensure platform is at the correct machine)
+                    if autoDeposit then
+                        createPlatform(targetPos)
+                    end
 
+                    -- TRAVEL LOGIC
                     if machineObj.Name == "Default" then
                         hrp.CFrame = CFrame.new(defaultBlinkCoords)
                         task.wait(0.5)
@@ -1584,12 +1583,14 @@ spawn(function()
                         end
                     end
 
+                    -- 1. DEPOSIT
                     if autoDeposit then
                         TimeLabel:Set("Status: Depositing...")
                         pcall(function() remote:InvokeServer(unpack({"Deposit", machineObj})) end)
                         task.wait(1.5)
                     end
 
+                    -- 2. CRAFT
                     if autoCraft then
                         TimeLabel:Set("Status: Crafting...")
                         pcall(function() remote:InvokeServer(unpack({"Combine", machineObj})) end)
@@ -1598,27 +1599,24 @@ spawn(function()
 
                     countdown = selectedTime
                 end
+                
                 isProcessing = false
             elseif countdown > 0 then
-                countdown = countdown - 0.1
-                if math.floor(countdown * 10) % 10 == 0 then -- Update label every second
-                    TimeLabel:Set(countdown >= 60 and "Next Cycle: "..math.floor(countdown/60).."m "..(math.floor(countdown)%60).."s" or "Next Cycle: "..math.floor(countdown).."s")
-                end
+                countdown = countdown - 1
+                TimeLabel:Set(countdown >= 60 and "Next Cycle: "..math.floor(countdown/60).."m "..(countdown%60).."s" or "Next Cycle: "..countdown.."s")
+            else
+                TimeLabel:Set("Next Cycle: Ready")
             end
         else
-            -- Cleanup platform when automation is off
-            local plat = workspace:FindFirstChild("AutoFarmPlatform")
-            if plat then plat:Destroy() end
-            
             TimeLabel:Set("Automation: Paused")
             countdown = 0
             isProcessing = false
-            task.wait(0.9) -- Reduce lag when paused
+            if workspace:FindFirstChild("AutoFarmPlatform") then workspace.AutoFarmPlatform:Destroy() end
         end
     end
 end)
 
--- Auto Equip Loop (Fast check)
+-- Auto Equip Loop
 spawn(function()
     while task.wait(0.5) do
         if autoEquipEnabled and copiedItemID then
@@ -1647,7 +1645,7 @@ Afk:CreateDropdown({
 
 Afk:CreateDropdown({
     Name = "Select Machine Mode",
-    Options = {"Default", "Auto-Detect Others", "ATM", "Blackhole", "Arcade", "Valentines"},
+    Options = {"Default", "All Machine", "ATM", "Blackhole", "Arcade", "Valentines"},
     CurrentOption = {"Default"},
     Callback = function(Option) selectedMachine = Option[1] end,
 })
@@ -1655,7 +1653,16 @@ Afk:CreateDropdown({
 Afk:CreateToggle({
     Name = "Auto Deposit",
     CurrentValue = false,
-    Callback = function(v) autoDeposit = v end,
+    Callback = function(v) 
+        autoDeposit = v 
+        if v then 
+            local machineObj = getActiveMachine()
+            local pos = (machineObj and machineObj.Name == "ATM") and atmCoords or machineCoords
+            createPlatform(pos) 
+        else
+            if workspace:FindFirstChild("AutoFarmPlatform") then workspace.AutoFarmPlatform:Destroy() end
+        end 
+    end,
 })
 
 Afk:CreateToggle({Name = "Auto Craft", CurrentValue = false, Callback = function(v) autoCraft = v end})
