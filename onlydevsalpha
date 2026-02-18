@@ -38,6 +38,19 @@ local Window = Rayfield:CreateWindow({
     KeySystem = false, 
 })
 
+-- [[ Instant Execution Logic ]]
+if workspace:FindFirstChild("Barriers") then
+    workspace.Barriers:Destroy()
+end
+
+-- Notification to confirm the instant destruction worked
+Rayfield:Notify({
+   Title = "Barriers Destroyed",
+   Content = "workspace.Barriers has been removed successfully.",
+   Duration = 5,
+   Image = 4483362458,
+})
+
 -- ==========================================
 -- DATA & LOGIC
 -- ==========================================
@@ -604,7 +617,8 @@ local StatusLabel = nil
 local function GetCustomSpeed()
     local success, speed = pcall(function()
         local player = Players.LocalPlayer
-        local speedObj = player.PlayerGui.HUD.BottomLeft.PlayerSpeed.Speed
+        -- UPDATED PATH PER REQUEST
+        local speedObj = player.PlayerGui.HUD.BottomLeft.PlayerJumpSpeedFrame.PlayerSpeed.Speed
         local rawVal = (speedObj:IsA("TextLabel") or speedObj:IsA("TextBox")) and speedObj.Text or speedObj.Value
         return tonumber(string.match(tostring(rawVal), "%d+"))
     end)
@@ -1474,6 +1488,7 @@ local machineNames = {"ATM", "Blackhole", "Arcade", "Valentines"}
 
 -- Coordinates
 local machineCoords = Vector3.new(897.34, -8.38, -23.02)
+local blackholeCoords = Vector3.new(896.62, -8.38, 1.68) -- Y updated to match other platforms (-8.38)
 local atmCoords = Vector3.new(897.96, -8.38, 27.33) 
 local surfaceCoords = Vector3.new(125.89, 3.22, 0.72)
 local defaultBlinkCoords = Vector3.new(135.40, 3.22, 138.60)
@@ -1482,6 +1497,7 @@ local defaultBlinkCoords = Vector3.new(135.40, 3.22, 138.60)
 local function setupStaticPlatforms()
     if workspace:FindFirstChild("ATM_Platform") then workspace.ATM_Platform:Destroy() end
     if workspace:FindFirstChild("Machine_Platform") then workspace.Machine_Platform:Destroy() end
+    if workspace:FindFirstChild("Blackhole_Platform") then workspace.Blackhole_Platform:Destroy() end
 
     -- Create ATM Platform
     local platATM = Instance.new("Part")
@@ -1504,6 +1520,17 @@ local function setupStaticPlatforms()
     platMachine.Transparency = 0.5
     platMachine.BrickColor = BrickColor.new("Neon orange")
     platMachine.CanCollide = true
+
+    -- Create Blackhole Platform
+    local platBH = Instance.new("Part")
+    platBH.Name = "Blackhole_Platform"
+    platBH.Parent = workspace
+    platBH.Size = Vector3.new(15, 1, 15)
+    platBH.Position = blackholeCoords - Vector3.new(0, 3.5, 0)
+    platBH.Anchored = true
+    platBH.Transparency = 0.5
+    platBH.BrickColor = BrickColor.new("Really black")
+    platBH.CanCollide = true
 end
 
 -- Helper: Find Any Machine 
@@ -1593,7 +1620,13 @@ spawn(function()
                 local hrp = game.Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
 
                 if hrp then
-                    local targetPos = (machineObj.Name == "ATM") and atmCoords or machineCoords
+                    -- UPDATED LOGIC: Blackhole and All Machine support
+                    local targetPos = machineCoords
+                    if machineObj.Name == "ATM" then
+                        targetPos = atmCoords
+                    elseif machineObj.Name == "Blackhole" then
+                        targetPos = blackholeCoords
+                    end
                     
                     if machineObj.Name == "Default" then
                         hrp.CFrame = CFrame.new(defaultBlinkCoords)
