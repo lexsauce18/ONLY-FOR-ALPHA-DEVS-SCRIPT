@@ -328,13 +328,20 @@ local function RemoveESP(block)
 end
 
 local function ApplyLB_ESP(block)
-    -- Ensure we don't double-up ESP on the same block
     RemoveESP(block)
     if not _G.LB_ESP_Enabled then return end
 
-    -- Wait a tiny bit for the game to set the Rarity/Name values on spawn
+    -- Validation: Only target models or parts
+    if not (block:IsA("Model") or block:IsA("BasePart")) then return end
+
     task.wait(0.1) 
-    if not block.Parent then return end -- Check if it still exists
+    if not block.Parent then return end 
+
+    -- LOCK TO ROOTPART: This specifically targets the RootPart (like in your example) 
+    -- to prevent the text from flying/circling around the map.
+    local anchor = block:FindFirstChild("RootPart") or (block:IsA("Model") and block.PrimaryPart) or block:FindFirstChildWhichIsA("BasePart") or (block:IsA("BasePart") and block)
+    
+    if not anchor then return end
 
     local rarityObj = block:FindFirstChild("Rarity") or block:FindFirstChild("Type")
     local mutationObj = block:FindFirstChild("Mutation")
@@ -356,14 +363,14 @@ local function ApplyLB_ESP(block)
     local isGamer = string.find(nameLower, "gamer") or string.find(rarityLower, "gamer")
     local isInfinity = string.find(nameLower, "infinity") or string.find(rarityLower, "infinity")
     
-    if isUfo then displayName = "UFO LUCKY BLOCK" 
-    elseif isAdmin then displayName = "ADMIN LUCKY BLOCK"
-    elseif isRadioactive then displayName = "RADIOACTIVE LUCKY BLOCK"
-    elseif isMoney then displayName = "MONEY LUCKY BLOCK"
-    elseif isCelestial then displayName = "CELESTIAL LUCKY BLOCK"
-    elseif isDivine then displayName = "DIVINE LUCKY BLOCK"
-    elseif isGamer then displayName = "GAMER LUCKY BLOCK"
-    elseif isInfinity then displayName = "INFINITY LUCKY BLOCK" end
+    if isUfo then displayName = "UFO" 
+    elseif isAdmin then displayName = "ADMIN"
+    elseif isRadioactive then displayName = "RADIOACTIVE"
+    elseif isMoney then displayName = "MONEY"
+    elseif isCelestial then displayName = "CELESTIAL"
+    elseif isDivine then displayName = "DIVINE"
+    elseif isGamer then displayName = "GAMER"
+    elseif isInfinity then displayName = "INFINITY" end
 
     local shouldShow = false
     if table.find(_G.LB_Filters, "All") then
@@ -379,28 +386,30 @@ local function ApplyLB_ESP(block)
 
     if not shouldShow then return end
 
+    -- Highlight Logic
     local hl = Instance.new("Highlight")
     hl.Name = "ESPHighlight"
+    hl.FillTransparency = 0.5
+    hl.OutlineTransparency = 0
     
-    -- Color Logic
     if isAdmin then hl.FillColor = Color3.fromRGB(255, 50, 50) 
     elseif isRadioactive then hl.FillColor = Color3.fromRGB(150, 255, 0) 
     elseif isMoney then hl.FillColor = Color3.fromRGB(0, 255, 0)
     elseif isUfo then hl.FillColor = Color3.fromRGB(0, 255, 100) 
     elseif isCelestial then hl.FillColor = Color3.fromRGB(0, 180, 255)
     elseif isDivine then hl.FillColor = Color3.fromRGB(255, 255, 255)
-    elseif isGamer then hl.FillColor = Color3.fromRGB(255, 0, 255) -- Purple/Magenta
-    elseif isInfinity then hl.FillColor = Color3.fromRGB(75, 0, 130) -- Indigo
+    elseif isGamer then hl.FillColor = Color3.fromRGB(255, 0, 255)
+    elseif isInfinity then hl.FillColor = Color3.fromRGB(75, 0, 130)
     else hl.FillColor = Color3.fromRGB(255, 215, 0) end
-    
-    hl.FillTransparency = 0.5
     hl.Parent = block
 
+    -- Billboard Logic (FIXED SIZE & ANCHOR)
     local bb = Instance.new("BillboardGui")
     bb.Name = "ESPLabel"
-    bb.Size = UDim2.new(0, 200, 0, 50)
-    bb.StudsOffset = Vector3.new(0, 4, 0)
+    bb.Size = UDim2.new(0, 150, 0, 30)
+    bb.StudsOffset = Vector3.new(0, 3, 0)
     bb.AlwaysOnTop = true
+    bb.Adornee = anchor -- This forces the text to stay on the RootPart
     
     local lbl = Instance.new("TextLabel")
     lbl.Parent = bb
@@ -409,8 +418,9 @@ local function ApplyLB_ESP(block)
     lbl.Text = displayName
     lbl.TextColor3 = hl.FillColor
     lbl.TextStrokeTransparency = 0
-    lbl.TextScaled = true
+    lbl.TextSize = 14 -- Default size
     lbl.Font = Enum.Font.GothamBold
+    
     bb.Parent = block
 end
 
@@ -435,7 +445,6 @@ GameTab:CreateToggle({
 
 GameTab:CreateDropdown({
     Name = "Select Rarity Filter",
-    -- Added Gamer and Infinity to the options list below
     Options = {"All", "Common", "Rare", "Epic", "Legendary", "Mythical", "Cosmic", "Secret", "Celestial", "Divine", "Ufo", "Admin", "Radioactive", "Money", "Gamer", "Infinity"},
     CurrentOption = {"All"},
     MultipleOptions = true, 
@@ -511,30 +520,7 @@ task.spawn(function()
     end
 end)
 
-GameTab:CreateSection("Movement Mods")
-GameTab:CreateSlider({
-    Name = "WalkSpeed",
-    Range = {16, 300},
-    Increment = 1,
-    Suffix = "Speed",
-    CurrentValue = 16,
-    Flag = "SliderSpeed", 
-    Callback = function(Value)
-        pcall(function() Player.Character.Humanoid.WalkSpeed = Value end)
-    end,
-})
-
-GameTab:CreateSlider({
-    Name = "JumpPower",
-    Range = {50, 400},
-    Increment = 1,
-    Suffix = "Jump",
-    CurrentValue = 50,
-    Flag = "SliderJump", 
-    Callback = function(Value)
-        pcall(function() Player.Character.Humanoid.JumpPower = Value end)
-    end,
-})
+GameTab:CreateSection("Player Settings")
 
 GameTab:CreateToggle({
     Name = "Infinite Jump",
@@ -545,12 +531,14 @@ GameTab:CreateToggle({
     end,
 })
 
-GameTab:CreateSection("Fly")
 local flying = false
-local speed = 50
+local speed = 50 -- Default speed
 local bv, bg
+local Player = game.Players.LocalPlayer
+local UserInputService = game:GetService("UserInputService")
 
-GameTab:CreateToggle({
+-- Flight Toggle logic
+local FlyToggle = GameTab:CreateToggle({
     Name = "Fly (On/Off)",
     CurrentValue = false,
     Flag = "FlyToggle",
@@ -560,21 +548,30 @@ GameTab:CreateToggle({
         if flying then
             local root = char:FindFirstChild("HumanoidRootPart")
             if not root then return end
-            bv = Instance.new("BodyVelocity", root)
+            
+            bv = Instance.new("BodyVelocity")
+            bv.Parent = root
             bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-            bg = Instance.new("BodyGyro", root)
+            
+            bg = Instance.new("BodyGyro")
+            bg.Parent = root
             bg.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
             bg.P = 9000
+            
             task.spawn(function()
                 while flying do
-                    bg.CFrame = workspace.CurrentCamera.CFrame
-                    local direction = Vector3.new(0,0,0)
-                    local UIS = game:GetService("UserInputService")
-                    if UIS:IsKeyDown(Enum.KeyCode.W) then direction = direction + workspace.CurrentCamera.CFrame.LookVector end
-                    if UIS:IsKeyDown(Enum.KeyCode.S) then direction = direction - workspace.CurrentCamera.CFrame.LookVector end
-                    if UIS:IsKeyDown(Enum.KeyCode.A) then direction = direction - workspace.CurrentCamera.CFrame.RightVector end
-                    if UIS:IsKeyDown(Enum.KeyCode.D) then direction = direction + workspace.CurrentCamera.CFrame.RightVector end
-                    bv.Velocity = direction * speed
+                    if bg and bv then
+                        bg.CFrame = workspace.CurrentCamera.CFrame
+                        local direction = Vector3.new(0,0,0)
+                        
+                        if UserInputService:IsKeyDown(Enum.KeyCode.W) then direction = direction + workspace.CurrentCamera.CFrame.LookVector end
+                        if UserInputService:IsKeyDown(Enum.KeyCode.S) then direction = direction - workspace.CurrentCamera.CFrame.LookVector end
+                        if UserInputService:IsKeyDown(Enum.KeyCode.A) then direction = direction - workspace.CurrentCamera.CFrame.RightVector end
+                        if UserInputService:IsKeyDown(Enum.KeyCode.D) then direction = direction + workspace.CurrentCamera.CFrame.RightVector end
+                        
+                        -- Uses the updated 'speed' variable from the Input box
+                        bv.Velocity = direction * speed
+                    end
                     task.wait()
                 end
                 if bv then bv:Destroy() end
@@ -586,6 +583,85 @@ GameTab:CreateToggle({
         end
     end,
 })
+
+-- Typeable Speed Input
+GameTab:CreateInput({
+   Name = "Fly Speed",
+   PlaceholderText = "Enter speed (e.g. 100)",
+   RemoveTextAfterFocusLost = false,
+   Callback = function(Text)
+       local num = tonumber(Text)
+       if num then
+           speed = num
+       else
+           -- Optional: Reset to default or notify if not a number
+           speed = 50 
+       end
+   end,
+})
+
+-- Keybind to Toggle
+GameTab:CreateKeybind({
+   Name = "Fly Keybind",
+   CurrentKeybind = "F",
+   HoldToInteract = false,
+   Flag = "FlyKeybind",
+   Callback = function()
+       FlyToggle:Set(not flying)
+   end,
+})
+
+-- [[ ADVANCED ANTI-AFK BYPASS ]]
+local Players = game:GetService("Players")
+local VirtualUser = game:GetService("VirtualUser")
+local LocalPlayer = Players.LocalPlayer
+
+-- Check if you already have a Window variable, if not, ensure this is placed after your Window creation
+-- _G.AntiAFKState is used to keep the toggle persistent
+_G.AntiAFKState = _G.AntiAFKState or false
+
+
+GameTab:CreateToggle({
+   Name = "Anti-Afk",
+   CurrentValue = _G.AntiAFKState,
+   Flag = "AntiAFK_Toggle_v2", 
+   Callback = function(Value)
+      _G.AntiAFKState = Value
+      if Value then
+          Rayfield:Notify({
+             Title = "Anti-AFK Active",
+             Content = "Bypass active. Simulating input every 15s.",
+             Duration = 3,
+             Image = 4483362458,
+          })
+      end
+   end,
+})
+
+-- The actual bypass logic
+-- We use a task.spawn loop instead of the 'Idled' event, as some games block that event
+task.spawn(function()
+    while true do
+        if _G.AntiAFKState then
+            -- This simulates a mouse button click and a movement to trick the server
+            pcall(function()
+                VirtualUser:CaptureController()
+                VirtualUser:ClickButton2(Vector2.new())
+            end)
+        end
+        task.wait(15) -- Checks every 15 seconds
+    end
+end)
+
+-- Extra Layer: Prevent the "Single Player" teleport
+-- If the game tries to teleport you to a lobby place, this attempts to cancel it.
+local TeleportService = game:GetService("TeleportService")
+TeleportService.TeleportInitFailed:Connect(function(player, result, errorMessage)
+    if _G.AntiAFKState and player == LocalPlayer then
+        print("Blocked an AFK Teleport attempt.")
+        return -- Stay in the current game
+    end
+end)
 
 -- ==========================================
 -- TAB 3: AUTOMATION
@@ -667,8 +743,6 @@ local RarityDropdown = Automation:CreateDropdown({
    Flag = "RarityDropdown",
    Callback = function(Options) getgenv().SelectedRarities = Options end,
 })
-
--- Sliders removed as requested.
 
 local Toggle = Automation:CreateToggle({
    Name = "Enable Auto Collect",
