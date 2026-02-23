@@ -4,7 +4,9 @@
 ]]
 
 -- 1. WAIT FOR GAME TO LOAD
-repeat task.wait() until game:IsLoaded()
+if not game:IsLoaded() then
+    game.Loaded:Wait()
+end
 
 local Player = game.Players.LocalPlayer
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -50,172 +52,6 @@ Rayfield:Notify({
    Duration = 5,
    Image = 4483362458,
 })
-
--- ==========================================
--- DATA & LOGIC
--- ==========================================
-
--- VIP Locations from your script
-local vipLocations = {
-	Vector3.new(241.47, 3.27, -139.51),
-	Vector3.new(341.39, 3.27, -139.50),
-	Vector3.new(470.24, 3.27, -139.53),
-	Vector3.new(647.98, 3.27, -139.51),
-	Vector3.new(917.80, 3.27, -139.51),
-	Vector3.new(1321.95, 3.27, -139.51),
-	Vector3.new(1912.83, 3.27, -138.53),
-	Vector3.new(2427.05, 3.27, -139.01)
-}
-
-local function getNearestGapIndex()
-    local character = Player.Character
-    if not character or not character:FindFirstChild("HumanoidRootPart") then return 1 end
-    local root = character.HumanoidRootPart
-    local closestIndex = 1
-    local shortestDistance = math.huge
-    for i, gap in ipairs(gaps) do
-        if gap and gap:IsA("BasePart") then
-            local dist = (root.Position - gap.Position).Magnitude
-            if dist < shortestDistance then
-                shortestDistance = dist
-                closestIndex = i
-            end
-        end
-    end
-    return closestIndex
-end
-
--- Nearest Index function for VIP
-local function getNearestVIPIndex()
-    local character = Player.Character
-    if not character or not character:FindFirstChild("HumanoidRootPart") then return 1 end
-    local root = character.HumanoidRootPart
-    local closestIndex = 1
-    local shortestDistance = math.huge
-    for i, pos in ipairs(vipLocations) do
-        local distance = (root.Position - pos).Magnitude
-        if distance < shortestDistance then
-            shortestDistance = distance
-            closestIndex = i
-        end
-    end
-    return closestIndex
-end
-
-local function tweenToGap(index)
-    local character = Player.Character
-    local targetPart = gaps[index]
-    if not character or not character:FindFirstChild("HumanoidRootPart") or not targetPart then return end
-    local root = character.HumanoidRootPart
-    local tweenInfo = TweenInfo.new(1.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
-    local targetCFrame = targetPart.CFrame * CFrame.new(0, 7, 0)
-    local tween = TweenService:Create(root, tweenInfo, {CFrame = targetCFrame})
-    tween:Play()
-end
-
--- Tween function for VIP
-local function tweenToVIP(targetVector)
-    local character = Player.Character
-    if not character or not character:FindFirstChild("HumanoidRootPart") then return end
-    local root = character.HumanoidRootPart
-    local tweenInfo = TweenInfo.new(1.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-    local targetCFrame = CFrame.new(targetVector + Vector3.new(0, 3, 0))
-    
-    root.Anchored = true
-    local tween = TweenService:Create(root, tweenInfo, {CFrame = targetCFrame})
-    tween:Play()
-    tween.Completed:Connect(function()
-        root.Anchored = false
-    end)
-end
-
--- ==========================================
--- MACHINE REMOTE (50 STUD DISTANCE EXPAND)
--- ==========================================
-local SelectedMachineName = "Default"
-
--- AUTO-EXPAND LOGIC: Runs immediately on execution
-task.spawn(function()
-    while task.wait(2) do -- Checks every 2 seconds for new spawned machines
-        pcall(function()
-            local spawnFolder = workspace:FindFirstChild("SpawnMachines")
-            if spawnFolder then
-                for _, machine in ipairs(spawnFolder:GetChildren()) do
-                    local prompts = machine:FindFirstChild("Main") and machine.Main:FindFirstChild("Prompts")
-                    if prompts then
-                        for _, prompt in ipairs(prompts:GetChildren()) do
-                            if prompt:IsA("ProximityPrompt") then
-                                prompt.MaxActivationDistance = 50
-                            end
-                        end
-                    end
-                end
-            end
-        end)
-    end
-end)
-
--- 1. Precision Fire with Stud-Distance Bypass
-local function fireMachineRemote(indexOrName)
-    local machine = workspace.SpawnMachines:FindFirstChild(SelectedMachineName)
-    if not machine or not machine:FindFirstChild("Main") then 
-        Rayfield:Notify({Title = "Error", Content = "Machine not found!", Duration = 2})
-        return 
-    end
-
-    local prompts = machine.Main:FindFirstChild("Prompts")
-    if not prompts then return end
-    
-    local target = (type(indexOrName) == "string") and prompts:FindFirstChild(indexOrName) or prompts:GetChildren()[indexOrName]
-
-    if target and target:IsA("ProximityPrompt") then
-        local root = game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-        if root then
-            local oldPos = root.CFrame
-            -- Snap to machine (bypass 10/40 stud check)
-            root.CFrame = machine.Main.CFrame
-            task.wait(0.2) 
-            
-            fireproximityprompt(target)
-            
-            task.wait(0.1)
-            root.CFrame = oldPos 
-        end
-    end
-end
-
--- 2. Your Working Confirmation Logic (Force Click)
-local function activateYesButton()
-    local playerGui = game:GetService("Players").LocalPlayer:FindFirstChild("PlayerGui")
-    local choiceMenu = playerGui and playerGui:FindFirstChild("Menus") and playerGui.Menus:FindFirstChild("Choice")
-    local yesBtn = choiceMenu and choiceMenu.Choices:FindFirstChild("Yes")
-
-    if yesBtn then
-        -- Method A: Signal Simulation
-        pcall(function()
-            firesignal(yesBtn.MouseButton1Click)
-            firesignal(yesBtn.Activated)
-        end)
-
-        -- Method B: Virtual Input Manager
-        local VIM = game:GetService("VirtualInputManager")
-        local x = yesBtn.AbsolutePosition.X + (yesBtn.AbsoluteSize.X / 2)
-        local y = yesBtn.AbsolutePosition.Y + (yesBtn.AbsoluteSize.Y / 2) + 58
-        
-        VIM:SendMouseButtonEvent(x, y, 0, true, game, 0)
-        task.wait(0.05)
-        VIM:SendMouseButtonEvent(x, y, 0, false, game, 0)
-    end
-end
-
--- ==========================================
--- REMOTE REFERENCES
--- ==========================================
-local SellAllRemote = ReplicatedStorage:WaitForChild("RemoteFunctions"):WaitForChild("SellAll")
-local SellToolRemote = ReplicatedStorage:WaitForChild("RemoteFunctions"):WaitForChild("SellTool")
-local UpgradeRemote = ReplicatedStorage:WaitForChild("RemoteFunctions"):WaitForChild("UpgradeSpeed")
-local RebirthRemote = ReplicatedStorage:WaitForChild("RemoteFunctions"):WaitForChild("Rebirth")
-local WheelRemote = ReplicatedStorage:WaitForChild("Packages"):WaitForChild("Net"):WaitForChild("RF/WheelSpin.Roll")
 
 -- ==========================================
 -- TAB 1: MAIN (User Stats)
@@ -312,6 +148,82 @@ GameTab:CreateButton({
         end
     end,
 })
+
+-- DATA & LOGIC
+
+-- VIP Locations from your script
+local vipLocations = {
+	Vector3.new(241.47, 3.27, -139.51),
+	Vector3.new(341.39, 3.27, -139.50),
+	Vector3.new(470.24, 3.27, -139.53),
+	Vector3.new(647.98, 3.27, -139.51),
+	Vector3.new(917.80, 3.27, -139.51),
+	Vector3.new(1321.95, 3.27, -139.51),
+	Vector3.new(1912.83, 3.27, -138.53),
+	Vector3.new(2427.05, 3.27, -139.01)
+}
+
+local function getNearestGapIndex()
+    local character = Player.Character
+    if not character or not character:FindFirstChild("HumanoidRootPart") then return 1 end
+    local root = character.HumanoidRootPart
+    local closestIndex = 1
+    local shortestDistance = math.huge
+    for i, gap in ipairs(gaps) do
+        if gap and gap:IsA("BasePart") then
+            local dist = (root.Position - gap.Position).Magnitude
+            if dist < shortestDistance then
+                shortestDistance = dist
+                closestIndex = i
+            end
+        end
+    end
+    return closestIndex
+end
+
+-- Nearest Index function for VIP
+local function getNearestVIPIndex()
+    local character = Player.Character
+    if not character or not character:FindFirstChild("HumanoidRootPart") then return 1 end
+    local root = character.HumanoidRootPart
+    local closestIndex = 1
+    local shortestDistance = math.huge
+    for i, pos in ipairs(vipLocations) do
+        local distance = (root.Position - pos).Magnitude
+        if distance < shortestDistance then
+            shortestDistance = distance
+            closestIndex = i
+        end
+    end
+    return closestIndex
+end
+
+local function tweenToGap(index)
+    local character = Player.Character
+    local targetPart = gaps[index]
+    if not character or not character:FindFirstChild("HumanoidRootPart") or not targetPart then return end
+    local root = character.HumanoidRootPart
+    local tweenInfo = TweenInfo.new(1.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+    local targetCFrame = targetPart.CFrame * CFrame.new(0, 7, 0)
+    local tween = TweenService:Create(root, tweenInfo, {CFrame = targetCFrame})
+    tween:Play()
+end
+
+-- Tween function for VIP
+local function tweenToVIP(targetVector)
+    local character = Player.Character
+    if not character or not character:FindFirstChild("HumanoidRootPart") then return end
+    local root = character.HumanoidRootPart
+    local tweenInfo = TweenInfo.new(1.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    local targetCFrame = CFrame.new(targetVector + Vector3.new(0, 3, 0))
+    
+    root.Anchored = true
+    local tween = TweenService:Create(root, tweenInfo, {CFrame = targetCFrame})
+    tween:Play()
+    tween.Completed:Connect(function()
+        root.Anchored = false
+    end)
+end
 
 GameTab:CreateLabel("DON'T GO NEAR THE WAVES PLAYER WILL DIE")
 
@@ -668,316 +580,361 @@ end)
 -- ==========================================
 local Automation = Window:CreateTab("Automation", 4483345998)
 
-local TweenService = game:GetService("TweenService")
-local VirtualInputManager = game:GetService("VirtualInputManager")
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
+Automation:CreateSection("Auto Collect Lucky Blocks")
+-- Variables
+local _G = {
+    AutoCollect = false,
+    SelectedRarities = {}, 
+    TravelSpeed = 300,
+    SafeZone = Vector3.new(103.63, 3.22, 0.27),
+    UnderMapY = -20
+}
 
---------------------------------------------------------------------------------
--- // CONFIGURATION (Internal Defaults) //
---------------------------------------------------------------------------------
-getgenv().AutoCollect = false
-getgenv().SelectedRarities = {} 
-getgenv().TsunamiSafeDistance = 100  -- CHANGED: Default 100
-getgenv().CollectionDelay = 0.5      -- CHANGED: Default 0.5
-local SafeYHeight = -50 
+local Player = game.Players.LocalPlayer
+local Character = Player.Character or Player.CharacterAdded:Wait()
+local RootPart = Character:WaitForChild("HumanoidRootPart")
 
-local HistoryLog = {} 
-local HistoryParagraph = nil 
-local StatusLabel = nil
+-- Update Character Reference on Respawn
+Player.CharacterAdded:Connect(function(NewCharacter)
+    Character = NewCharacter
+    RootPart = NewCharacter:WaitForChild("HumanoidRootPart")
+end)
 
---------------------------------------------------------------------------------
--- // FUNCTIONS //
---------------------------------------------------------------------------------
+-- Status Label
+local StatusLabel = Automation:CreateLabel("Status: Idle")
 
-local function GetCustomSpeed()
-    local success, speed = pcall(function()
-        local player = Players.LocalPlayer
-        -- UPDATED PATH PER REQUEST
-        local speedObj = player.PlayerGui.HUD.BottomLeft.PlayerJumpSpeedFrame.PlayerSpeed.Speed
-        local rawVal = (speedObj:IsA("TextLabel") or speedObj:IsA("TextBox")) and speedObj.Text or speedObj.Value
-        return tonumber(string.match(tostring(rawVal), "%d+"))
-    end)
-    if success and speed and speed > 0 then return speed end
-    return 16 
+local function UpdateStatus(text)
+    StatusLabel:Set("Status: " .. text)
 end
 
-local function IsTsunamiNear(targetPosition)
-    local tsunamiFolder = workspace:FindFirstChild("ActiveTsunamis")
-    if not tsunamiFolder then return false end
-    for _, tsunami in pairs(tsunamiFolder:GetChildren()) do
-        local tPos = tsunami:IsA("Model") and tsunami:GetPivot().Position or (tsunami:IsA("BasePart") and tsunami.Position)
-        if tPos then
-            -- Check horizontal distance only
-            local dist = (Vector3.new(tPos.X, 0, tPos.Z) - Vector3.new(targetPosition.X, 0, targetPosition.Z)).Magnitude
-            if dist < getgenv().TsunamiSafeDistance then return true end
+-- Snap Method: Direct CFrame assignment for Y, Tween for X/Z
+local function TravelTo(targetVector3)
+    if not RootPart or not Character:FindFirstChild("Humanoid") then return end
+    local TweenService = game:GetService("TweenService")
+    
+    -- 1. Snap Down (Instant Y change)
+    RootPart.CFrame = CFrame.new(RootPart.Position.X, _G.UnderMapY, RootPart.Position.Z)
+    
+    -- 2. Tween to Target X/Z (Under Map)
+    local travelTarget = Vector3.new(targetVector3.X, _G.UnderMapY, targetVector3.Z)
+    local distance = (RootPart.Position - travelTarget).Magnitude
+    local duration = distance / _G.TravelSpeed
+    
+    local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear)
+    local tween = TweenService:Create(RootPart, tweenInfo, {CFrame = CFrame.new(travelTarget)})
+    tween:Play()
+    tween.Completed:Wait()
+
+    -- 3. Snap Up to Target (Instant surface appearance)
+    RootPart.CFrame = CFrame.new(targetVector3)
+end
+
+-- Wave/Tsunami Detection
+local function IsAreaSafe(position)
+    for _, obj in pairs(workspace:GetChildren()) do
+        if (obj.Name:find("Wave") or obj.Name:find("Tsunami") or obj.Name:find("Flood")) and obj:IsA("BasePart") then
+            if (obj.Position - position).Magnitude < 60 then 
+                return false
+            end
         end
     end
-    return false 
+    return true
 end
 
-local function AddToHistory(rarityName)
-    local timeStr = os.date("%X")
-    local logEntry = "• [" .. timeStr .. "] " .. rarityName
-    table.insert(HistoryLog, 1, logEntry)
-    if #HistoryLog > 10 then table.remove(HistoryLog, #HistoryLog) end
-    if HistoryParagraph then HistoryParagraph:Set({Title = "Collection History", Content = table.concat(HistoryLog, "\n")}) end
-end
+-- Main Collection Loop
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        
+        if _G.AutoCollect then
+            if not Character or not RootPart or not RootPart.Parent then
+                UpdateStatus("Waiting for Respawn...")
+                repeat task.wait(1) until RootPart and RootPart.Parent
+            end
 
---------------------------------------------------------------------------------
--- // UI ELEMENTS //
---------------------------------------------------------------------------------
+            local folder = workspace:FindFirstChild("ActiveLuckyBlocks")
+            local targetBlock = nil
+            
+            UpdateStatus("Scanning for Rarities...")
+            
+            if folder then
+                for _, block in pairs(folder:GetChildren()) do
+                    local nameParts = block.Name:split("_")
+                    local rarity = nameParts[2]
+                    
+                    if rarity and _G.SelectedRarities[rarity] then
+                        targetBlock = block
+                        break 
+                    end
+                end
+                
+                if targetBlock and targetBlock:FindFirstChild("RootPart") then
+                    local prompt = targetBlock.RootPart:FindFirstChild("ProximityPrompt")
+                    
+                    if prompt then
+                        prompt.HoldDuration = 0
+                        
+                        UpdateStatus("Traveling to " .. targetBlock.Name .. "...")
+                        TravelTo(targetBlock.RootPart.Position)
+                        
+                        -- Disaster Safety Check
+                        if not IsAreaSafe(targetBlock.RootPart.Position) then
+                            UpdateStatus("Waiting for Disaster to Clear...")
+                            while not IsAreaSafe(targetBlock.RootPart.Position) and _G.AutoCollect do
+                                task.wait(0.5)
+                            end
+                        end
+                        
+                        UpdateStatus("Collecting...")
+                        task.wait(0.1)
+                        fireproximityprompt(prompt)
+                        
+                        -- Verification Step
+                        local timeout = 0
+                        while targetBlock.Parent == folder and timeout < 30 do 
+                            UpdateStatus("Verifying Collection...")
+                            task.wait(0.1)
+                            timeout = timeout + 1
+                            if timeout % 10 == 0 then fireproximityprompt(prompt) end 
+                        end
+                        
+                        UpdateStatus("Block Vanished! Snapping to Safe Zone...")
+                        TravelTo(_G.SafeZone)
+                        UpdateStatus("Idle at Safe Zone")
+                    end
+                else
+                    UpdateStatus("No Selected Rarities Found")
+                end
+            end
+        else
+            UpdateStatus("Auto-Collect Disabled")
+        end
+    end
+end)
 
-local Section = Automation:CreateSection("Status & Settings")
-StatusLabel = Automation:CreateLabel("Status: Idle")
-
-local RarityDropdown = Automation:CreateDropdown({
-   Name = "Select Rarities",
-   Options = {
-       "Common", "Uncommon", "Rare", "Epic", "Legendary", 
-       "Mythical", "Cosmic", "Secret", "Celestial", "Divine", "Infinity",
-       "Gamer", "Ufo", "Admin", "Radioactive", "Candy", "Money"
-   },
-   CurrentOption = {"Common"},
-   MultipleOptions = true,
-   Flag = "RarityDropdown",
-   Callback = function(Options) getgenv().SelectedRarities = Options end,
+--- UI CONTROLS ---
+Automation:CreateToggle({
+   Name = "Auto Collect Toggle",
+   CurrentValue = false,
+   Callback = function(Value)
+      _G.AutoCollect = Value
+   end,
 })
 
-local Toggle = Automation:CreateToggle({
-   Name = "Enable Auto Collect",
-   CurrentValue = false,
-   Flag = "AutoCollectLucky",
-   Callback = function(Value)
-      getgenv().AutoCollect = Value
-      
-      if Value then
-          task.spawn(function()
-             while getgenv().AutoCollect do
-                StatusLabel:Set("Status: Scanning...")
-                task.wait(0.1) 
-                
-                local player = Players.LocalPlayer
-                local character = player.Character or player.CharacterAdded:Wait()
-                local rootPart = character:WaitForChild("HumanoidRootPart")
-                
-                -- 1. SCANNING
-                local blockFolder = workspace:FindFirstChild("ActiveLuckyBlocks")
-                local foundBlock = nil
-                local targetRarityName = ""
-                
-                if blockFolder then
-                   for _, block in pairs(blockFolder:GetChildren()) do
-                      for _, rarity in pairs(getgenv().SelectedRarities) do
-                         -- Detection pattern updated to catch both Natural and Event spawns
-                         if string.match(block.Name, "_" .. rarity .. "$") then
-                            foundBlock = block
-                            targetRarityName = rarity
-                            break 
-                         end
-                      end
-                      if foundBlock then break end 
-                   end
-                end
-                
-                -- 2. FOUND TARGET
-                if foundBlock then
-                   local targetPart = foundBlock:FindFirstChild("RootPart")
-                   local prompt = targetPart and targetPart:FindFirstChild("ProximityPrompt")
+Automation:CreateDropdown({
+   Name = "Target Rarities",
+   Options = {"Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythical", "Cosmic", "Secret", "Celestial", "Divine", "Infinity", "Gamer", "Ufo", "Admin", "Radioactive", "Candy", "Money"},
+   CurrentOption = {},
+   MultipleOptions = true,
+   Callback = function(Options)
+      _G.SelectedRarities = {}
+      for _, v in pairs(Options) do
+          _G.SelectedRarities[v] = true
+      end
+   end,
+})
 
-                   if targetPart and prompt then
-                       local startPos = rootPart.Position
-                       local targetPos = targetPart.Position
-                       
-                       StatusLabel:Set("Status: Traveling to " .. targetRarityName .. "...")
-                       
-                       -- A. DIP & TWEEN TO BLOCK
-                       if rootPart.Position.Y > SafeYHeight + 5 then
-                           rootPart.CFrame = CFrame.new(rootPart.Position.X, SafeYHeight, rootPart.Position.Z)
-                           task.wait(0.1)
-                       end
-                       
-                       local destToBlock = Vector3.new(targetPos.X, SafeYHeight, targetPos.Z)
-                       local distToBlock = (destToBlock - rootPart.Position).Magnitude
-                       local speed = GetCustomSpeed()
-                       
-                       local tween1 = TweenService:Create(rootPart, TweenInfo.new(distToBlock / speed, Enum.EasingStyle.Linear), {CFrame = CFrame.new(destToBlock)})
-                       tween1:Play()
-                       tween1.Completed:Wait()
-                       
-                       -- B. TSUNAMI SAFETY CHECK
-                       while IsTsunamiNear(targetPos) and getgenv().AutoCollect do
-                           StatusLabel:Set("Status: ⚠️ Waiting for Tsunami (" .. getgenv().TsunamiSafeDistance .. "s)...")
-                           rootPart.CFrame = CFrame.new(destToBlock) 
-                           rootPart.Velocity = Vector3.zero
-                           task.wait(0.1) 
-                       end
-                       
-                       -- C. POP UP & COLLECT (0.5s Timer)
-                       if getgenv().AutoCollect and foundBlock.Parent and prompt.Parent then
-                          StatusLabel:Set("Status: Collecting " .. targetRarityName .. "...")
-                          
-                          rootPart.CFrame = CFrame.new(targetPos + Vector3.new(0, 3, 0))
-                          
-                          local startTime = tick()
-                          local waitTime = getgenv().CollectionDelay -- Uses 0.5 default
-                          
-                          while (tick() - startTime) < waitTime do
-                              if not foundBlock.Parent then break end 
-                              
-                              rootPart.CFrame = CFrame.new(targetPos + Vector3.new(0, 3, 0))
-                              rootPart.Velocity = Vector3.zero
-                              
-                              prompt.HoldDuration = 0 
-                              prompt.MaxActivationDistance = 200
-                              prompt.RequiresLineOfSight = false
-                              
-                              if fireproximityprompt then
-                                  fireproximityprompt(prompt)
-                              end
-                              
-                              VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-                              task.wait(0.05) 
-                              VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
-                          end
-                          
-                          -- D. DIP BACK DOWN
-                          rootPart.CFrame = CFrame.new(targetPos.X, SafeYHeight, targetPos.Z)
-                          
-                          StatusLabel:Set("Status: Returning to Start...")
-                          
-                          -- E. TWEEN HOME
-                          local destToStart = Vector3.new(startPos.X, SafeYHeight, startPos.Z)
-                          local distToStart = (destToStart - rootPart.Position).Magnitude
-                          speed = GetCustomSpeed()
-                          
-                          local tween2 = TweenService:Create(rootPart, TweenInfo.new(distToStart / speed, Enum.EasingStyle.Linear), {CFrame = CFrame.new(destToStart)})
-                          tween2:Play()
-                          tween2.Completed:Wait()
-                          
-                          -- F. FINISH
-                          rootPart.CFrame = CFrame.new(startPos)
-                          
-                          if not foundBlock.Parent then
-                              Rayfield:Notify({Title = "Block Secured!", Content = "Collected: " .. targetRarityName, Duration = 3, Image = 4483362458})
-                              AddToHistory(targetRarityName)
-                          else
-                              Rayfield:Notify({Title = "Timed Out", Content = "Failed to grab " .. targetRarityName, Duration = 3, Image = 4483362458})
-                          end
-                          
-                          StatusLabel:Set("Status: Cooldown...")
-                          task.wait(1) 
-                       end
-                   end
+Automation:CreateSlider({
+   Name = "Travel Speed",
+   Range = {50, 1000},
+   Increment = 10,
+   Suffix = "SPS",
+   CurrentValue = 300,
+   Callback = function(Value)
+      _G.TravelSpeed = Value
+   end,
+})
+
+--- AUTO TRIALS ---
+
+-- Variables
+local Player = game:GetService("Players").LocalPlayer
+local Character = Player.Character or Player.CharacterAdded:Wait()
+local TweenService = game:GetService("TweenService")
+local _Toggled = false
+local UnderMapY = -18 
+local TravelSpeed = 1000 
+local SafetyDistance = 50 
+
+local TowerPos = Vector3.new(4320.56, 6.92, -3.54)
+local RarityList = {"Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythical", "Cosmic", "Secret", "Celestial", "Divine", "Infinity"}
+
+-- Remotes
+local Networking = game:GetService("ReplicatedStorage").Shared.Remotes.Networking
+local ConfirmRemote = Networking["RE/Tower/TowerConfirmClaim"]
+local ClaimedRemote = Networking["RE/Tower/TowerClaimConfirmed"]
+
+-- Paths
+local TowerPrompt = workspace.GameObjects.PlaceSpecific.root.Tower.Main.Prompt.ProximityPrompt
+local BillboardPath = workspace.GameObjects.PlaceSpecific.root.Tower.Main.Billboard.BillboardGui.Frame.Info.Requirement
+
+-- Character Handling
+Player.CharacterAdded:Connect(function(newChar)
+    Character = newChar
+end)
+
+-- Helper: Tsunami Safety Check
+local function isTsunamiNear(targetPos)
+    for _, tsunami in pairs(workspace.ActiveTsunamis:GetChildren()) do
+        local tsunamiPart = tsunami:FindFirstChildWhichIsA("BasePart") or tsunami
+        if tsunamiPart and (tsunamiPart.Position - targetPos).Magnitude < SafetyDistance then
+            return true
+        end
+    end
+    return false
+end
+
+-- Helper: Movement Logic
+local function snapAndTween(targetPos, isCollecting, targetObject)
+    local root = Character:FindFirstChild("HumanoidRootPart")
+    local humanoid = Character:FindFirstChild("Humanoid")
+    if not root or not humanoid or humanoid.Health <= 0 then return false end
+
+    root.Velocity = Vector3.zero
+    root.CFrame = CFrame.new(root.Position.X, UnderMapY, root.Position.Z)
+    task.wait(0.01)
+
+    local targetUnder = Vector3.new(targetPos.X, UnderMapY, targetPos.Z)
+    local dist = (root.Position - targetUnder).Magnitude
+    local travelTween = TweenService:Create(root, TweenInfo.new(dist / TravelSpeed, Enum.EasingStyle.Linear), {CFrame = CFrame.new(targetUnder)})
+    
+    travelTween:Play()
+    
+    if isCollecting and targetObject then
+        while travelTween.PlaybackState == Enum.PlaybackState.Playing do
+            if not targetObject or not targetObject.Parent or not targetObject:FindFirstChild("Root") or humanoid.Health <= 0 then
+                travelTween:Cancel()
+                return false 
+            end
+            task.wait(0.05)
+        end
+    else
+        travelTween.Completed:Wait()
+    end
+    
+    root.Velocity = Vector3.zero
+
+    -- Tsunami Safety: Stay at Travel Y level (-18) if dangerous
+    if isCollecting then
+        if isTsunamiNear(targetPos) then
+            StatusLabel:Set("Status: Tsunami Danger! Hovering at Safety Depth...")
+            while _Toggled and isTsunamiNear(targetPos) and humanoid.Health > 0 do
+                root.CFrame = CFrame.new(targetPos.X, UnderMapY, targetPos.Z)
+                task.wait(0.1)
+            end
+        end
+    end
+
+    if humanoid.Health > 0 then
+        root.CFrame = CFrame.new(targetPos)
+        task.wait(0.15)
+        return true
+    end
+    return false
+end
+
+Automation:CreateSection("Auto Trials")
+local StatusLabel = Automation:CreateLabel("Status: Idle")
+
+Automation:CreateToggle({
+    Name = "Start Auto Trial",
+    CurrentValue = false,
+    Callback = function(Value)
+        _Toggled = Value
+        if _Toggled then
+            task.spawn(function()
+                while _Toggled do
+                    local HUD = Player.PlayerGui:FindFirstChild("TowerTrialHUD")
+                    local humanoid = Character:FindFirstChild("Humanoid")
+                    
+                    -- Death Handler
+                    if not humanoid or humanoid.Health <= 0 then
+                        StatusLabel:Set("Status: Waiting for Respawn...")
+                        repeat task.wait(0.5) until Character:FindFirstChild("Humanoid") and Character.Humanoid.Health > 0
+                        task.wait(1.5)
+                    end
+
+                    -- Phase 1: START TRIAL
+                    if not HUD or not HUD.TrialBar.Visible then
+                        StatusLabel:Set("Status: Snapping to Tower")
+                        snapAndTween(TowerPos, false)
+                        fireproximityprompt(TowerPrompt)
+                        task.wait(1)
+                    end
+
+                    if HUD and HUD.TrialBar.Visible then
+                        local textFound = BillboardPath.Text
+                        local detectedRarity = nil
+                        for _, rarity in pairs(RarityList) do
+                            if string.find(textFound, rarity) then
+                                detectedRarity = rarity
+                                break
+                            end
+                        end
+                        
+                        local depositStatus = HUD.TrialBar.Deposits.Text   
+                        local current, total = depositStatus:match("(%d+)/(%d+)")
+                        
+                        -- Phase 3: COMPLETE RUN (REMOTES)
+                        if current == total then
+                            StatusLabel:Set("Status: 10/10! Claiming via Remotes...")
+                            snapAndTween(TowerPos, false)
+                            
+                            ConfirmRemote:FireServer()
+                            task.wait(0.2)
+                            ClaimedRemote:FireServer()
+                            
+                            -- Sync wait after completion
+                            task.wait(3.5) 
+                        elseif detectedRarity then
+                            -- Phase 4: COLLECT
+                            local folder = workspace.ActiveBrainrots:FindFirstChild(detectedRarity)
+                            local targetItem = folder and folder:GetChildren()[1]
+                            
+                            if targetItem and targetItem:FindFirstChild("Root") then
+                                local targetPos = targetItem:GetPivot().Position
+                                StatusLabel:Set("Status: Moving to " .. detectedRarity)
+                                
+                                local success = snapAndTween(targetPos, true, targetItem)
+                                
+                                if success then
+                                    local takePrompt = targetItem.Root:FindFirstChild("TakePrompt")
+                                    if takePrompt then
+                                        local retryTimer = 0
+                                        while targetItem and targetItem.Parent == folder and retryTimer < 15 and humanoid.Health > 0 do
+                                            takePrompt.HoldDuration = 0
+                                            fireproximityprompt(takePrompt)
+                                            task.wait(0.1)
+                                            retryTimer = retryTimer + 1
+                                        end
+
+                                        -- Phase 5: DEPOSIT
+                                        if not targetItem or targetItem.Parent ~= folder then
+                                            StatusLabel:Set("Status: Depositing...")
+                                            task.wait(0.1)
+                                            snapAndTween(TowerPos, false)
+                                            fireproximityprompt(TowerPrompt)
+                                            
+                                            -- UPDATED: 3.5 Second Sync Wait
+                                            StatusLabel:Set("Status: Syncing New Rarity (3.5s)...")
+                                            local root = Character:FindFirstChild("HumanoidRootPart")
+                                            if root then root.Velocity = Vector3.zero end
+                                            task.wait(3.5) 
+                                        end
+                                    end
+                                end
+                            else
+                                StatusLabel:Set("Status: Searching for " .. detectedRarity)
+                                task.wait(0.3)
+                            end
+                        end
+                    end
+                    task.wait(0.05)
                 end
-             end
-             StatusLabel:Set("Status: Idle")
-          end)
-       else
-          StatusLabel:Set("Status: Idle")
-       end
+            end)
+        end
     end,
 })
-
-local Section3 = Automation:CreateSection("History Log")
-HistoryParagraph = Automation:CreateParagraph({Title = "Collection History", Content = "Waiting for drops..."})
-
--- Feature Logic Variables
-local AutoCollect = false
-
--- Improved function to find the nearest candy
-local function getNearestCandy()
-    local Character = game.Players.LocalPlayer.Character
-    if not Character or not Character:FindFirstChild("HumanoidRootPart") then return nil end
-    
-    local HRP = Character.HumanoidRootPart
-    local nearestCandy = nil
-    local shortestDistance = math.huge
-    
-    -- Check if the folder exists
-    local candyFolder = workspace:FindFirstChild("CandyEventParts")
-    
-    if candyFolder then
-        for _, candy in pairs(candyFolder:GetChildren()) do
-            -- Use Pivot position to support Models AND Parts
-            local candyPos = (candy:IsA("Model") and candy:GetPivot().Position) or (candy:IsA("BasePart") and candy.Position)
-            
-            if candyPos then
-                local distance = (HRP.Position - candyPos).Magnitude
-                if distance < shortestDistance then
-                    shortestDistance = distance
-                    nearestCandy = candy
-                end
-            end
-        end
-    end
-    return nearestCandy
-end
-
--- Remote Automation Section
-Automation:CreateSection("Valentines Event")
-
--- Button with specific Index Teleport Logic
-Automation:CreateButton({
-   Name = "TP & Deposit Candy",
-   Callback = function()
-      local character = game.Players.LocalPlayer.Character
-      local station = workspace:FindFirstChild("ValentinesMap") and workspace.ValentinesMap:FindFirstChild("CandyGramStation")
-      local prompt = station and station:FindFirstChild("Main") 
-                     and station.Main:FindFirstChild("Prompts") 
-                     and station.Main.Prompts:FindFirstChild("ProximityPrompt")
-      
-      -- Using specifically requested index [56] for teleport location
-      local tpTarget = station and station:GetChildren()[56]
-      
-      if character and tpTarget and prompt then
-         -- Teleport to the part at index 56
-         if tpTarget:IsA("Model") then
-             character:PivotTo(tpTarget:GetPivot())
-         elseif tpTarget:IsA("BasePart") then
-             character:PivotTo(tpTarget.CFrame)
-         end
-         
-         -- Small wait to ensure character is in range before firing
-         task.wait(0.1)
-         
-         -- Fire the prompt
-         fireproximityprompt(prompt)
-      else
-         warn("Required parts (Index 56 or Prompt) not found!")
-      end
-   end,
-})
-
--- Toggle for Nearest Teleport
-Automation:CreateToggle({
-   Name = "Auto TP to Nearest Candy",
-   CurrentValue = false,
-   Flag = "CandyTPToggle",
-   Callback = function(Value)
-      AutoCollect = Value
-      
-      if AutoCollect then
-         task.spawn(function()
-            while AutoCollect do
-               local target = getNearestCandy()
-               local character = game.Players.LocalPlayer.Character
-               
-               if target and character then
-                  -- PivotTo is the most modern and reliable way to TP
-                  local targetCFrame = (target:IsA("Model") and target:GetPivot()) or (target:IsA("BasePart") and target.CFrame)
-                  
-                  if targetCFrame then
-                      character:PivotTo(targetCFrame)
-                  end
-               end
-               task.wait(0.2) 
-            end
-         end)
-      end
-   end,
-})
-
 
 --- AUTO COIN EVENT ---
 
@@ -1407,141 +1364,6 @@ Automation:CreateButton({
     end,
 })
 
-Automation:CreateSection("Auto Spawn Machine")
-
-local isRunning = false
-
-Automation:CreateToggle({
-   Name = "Auto Steal Common Brainrot [fuse]",
-   CurrentValue = false,
-   Flag = "BrainrotToggle", -- Unique identifier for config saving
-   Callback = function(Value)
-      isRunning = Value
-      
-      if isRunning then
-         -- Run the logic in a separate thread so the UI doesn't freeze
-         task.spawn(function()
-            local COMMON_FOLDER = workspace:WaitForChild("ActiveBrainrots"):WaitForChild("Common")
-            local SAFE_ZONE = workspace:WaitForChild("Misc"):WaitForChild("Ground")
-            local PLAYER = game.Players.LocalPlayer
-            
-            while isRunning do
-               local CHARACTER = PLAYER.Character
-               local ROOT = CHARACTER and CHARACTER:FindFirstChild("HumanoidRootPart")
-               
-               if ROOT then
-                  local targets = COMMON_FOLDER:GetChildren()
-                  
-                  if #targets > 0 then
-                     local target = targets[1]
-                     -- Safely find the prompt based on your example
-                     local prompt = target:FindFirstChild("Root") and target.Root:FindFirstChild("TakePrompt")
-                     
-                     if prompt then
-                        -- Teleport to Brainrot
-                        ROOT.CFrame = target.Root.CFrame
-                        task.wait(0.3)
-                        
-                        -- Steal it
-                        fireproximityprompt(prompt)
-                        task.wait(0.2)
-                        
-                        -- Return to Safezone
-                        ROOT.CFrame = SAFE_ZONE.CFrame + Vector3.new(0, 3, 0)
-                        task.wait(0.5)
-                     end
-                  end
-               end
-               task.wait(0.1) -- Small delay to prevent lag
-            end
-         end)
-      end
-   end,
-})
-
-Automation:CreateDropdown({
-   Name = "Select Machine",
-   Options = {"Default", "ATM", "Blackhole", "Arcade"}, 
-   CurrentOption = {"Default"},
-   Callback = function(Option) SelectedMachineName = Option[1] end,
-})
-
-Automation:CreateButton({
-    Name = "Deposit (Hold Item)",
-    Callback = function()
-        fireMachineRemote("ProximityPrompt")
-    end,
-})
-
-Automation:CreateButton({
-    Name = "Blink-Craft (Auto Confirm)",
-    Callback = function()
-        local machine = workspace.SpawnMachines:FindFirstChild(SelectedMachineName)
-        local root = game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-        
-        if machine and root then
-            local oldPos = root.CFrame
-            
-            -- 1. Blink to Machine
-            root.CFrame = machine.Main.CFrame
-            task.wait(0.2)
-            
-            -- 2. Fire Craft Prompt (Index 2)
-            local prompts = machine.Main:FindFirstChild("Prompts")
-            local craftPrompt = prompts and prompts:GetChildren()[2]
-            if craftPrompt then fireproximityprompt(craftPrompt) end
-            
-            -- 3. Wait for UI delay and Force Click
-            task.wait(0.4) 
-            activateYesButton()
-            
-            -- 4. Return to last location
-            task.wait(0.1)
-            root.CFrame = oldPos
-            Rayfield:Notify({Title = "Success", Content = "Blink-Craft Completed for " .. SelectedMachineName, Duration = 2})
-        end
-    end,
-})
-
-Automation:CreateButton({
-    Name = "Withdraw All Brainrots",
-    Callback = function()
-        fireMachineRemote(3)
-    end,
-})
-
--- ==========================================
--- VARIABLES & UTILS
--- ==========================================
-local SelectedMachineName = "Default"
-local TargetToolID = nil 
-local AutoEquipEnabled = false
-local AutoCraftEnabled = false
-local AutoDepositEnabled = false
-local CraftCooldown = 30
-
-local function fireMachineRemote(indexOrName)
-    local machine = workspace.SpawnMachines:FindFirstChild(SelectedMachineName)
-    if not machine or not machine:FindFirstChild("Main") then return end
-
-    local prompts = machine.Main:FindFirstChild("Prompts")
-    if not prompts then return end
-    
-    local target = (type(indexOrName) == "string") and prompts:FindFirstChild(indexOrName) or prompts:GetChildren()[indexOrName]
-
-    if target and target:IsA("ProximityPrompt") then
-        local root = game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-        if root then
-            local oldPos = root.CFrame
-            root.CFrame = machine.Main.CFrame
-            task.wait(0.3) 
-            fireproximityprompt(target)
-            task.wait(0.1)
-            root.CFrame = oldPos 
-        end
-    end
-end
-
 -- ==========================================
 -- TAB 3:  AFK FUSE MACHINE
 -- ==========================================
@@ -1557,12 +1379,17 @@ local isProcessing = false
 local copiedItemID = nil
 local autoEquipEnabled = false
 
--- Machine Names for Auto-Detection (REMOVED "Default" FROM THIS LIST)
+-- Machine Names for Auto-Detection
 local machineNames = {"ATM", "Blackhole", "Arcade", "Valentines"}
+
+-- Updated Path Helper
+local function getMachineFolder()
+    return workspace:WaitForChild("GameObjects"):WaitForChild("PlaceSpecific"):WaitForChild("root"):WaitForChild("SpawnMachines")
+end
 
 -- Coordinates
 local machineCoords = Vector3.new(897.34, -8.38, -23.02)
-local blackholeCoords = Vector3.new(896.62, -8.38, 1.68) -- Y updated to match other platforms (-8.38)
+local blackholeCoords = Vector3.new(896.62, -8.38, 1.68)
 local atmCoords = Vector3.new(897.96, -8.38, 27.33) 
 local surfaceCoords = Vector3.new(125.89, 3.22, 0.72)
 local defaultBlinkCoords = Vector3.new(135.40, 3.22, 138.60)
@@ -1573,7 +1400,6 @@ local function setupStaticPlatforms()
     if workspace:FindFirstChild("Machine_Platform") then workspace.Machine_Platform:Destroy() end
     if workspace:FindFirstChild("Blackhole_Platform") then workspace.Blackhole_Platform:Destroy() end
 
-    -- Create ATM Platform
     local platATM = Instance.new("Part")
     platATM.Name = "ATM_Platform"
     platATM.Parent = workspace
@@ -1584,7 +1410,6 @@ local function setupStaticPlatforms()
     platATM.BrickColor = BrickColor.new("Cyan")
     platATM.CanCollide = true
 
-    -- Create Main Machine Platform
     local platMachine = Instance.new("Part")
     platMachine.Name = "Machine_Platform"
     platMachine.Parent = workspace
@@ -1595,7 +1420,6 @@ local function setupStaticPlatforms()
     platMachine.BrickColor = BrickColor.new("Neon orange")
     platMachine.CanCollide = true
 
-    -- Create Blackhole Platform
     local platBH = Instance.new("Part")
     platBH.Name = "Blackhole_Platform"
     platBH.Parent = workspace
@@ -1609,9 +1433,9 @@ end
 
 -- Helper: Find Any Machine 
 local function getActiveMachine()
-    local folder = workspace:WaitForChild("SpawnMachines")
+    local folder = getMachineFolder()
     
-    if selectedMachine == "All Machine" or selectedMachine == "Auto-Detect Others" then
+    if selectedMachine == "All Machine" then
         for _, name in ipairs(machineNames) do
             local found = folder:FindFirstChild(name)
             if found then return found end
@@ -1690,11 +1514,11 @@ spawn(function()
 
                 isProcessing = true
                 
-                local remote = game:GetService("ReplicatedStorage"):WaitForChild("Packages"):WaitForChild("Net"):WaitForChild("RF/SpawnMachine.Action")
+                -- Updated Remote Path
+                local remote = game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Remotes"):WaitForChild("Networking"):WaitForChild("RF/SpawnMachineAction")
                 local hrp = game.Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
 
                 if hrp then
-                    -- UPDATED LOGIC: Blackhole and All Machine support
                     local targetPos = machineCoords
                     if machineObj.Name == "ATM" then
                         targetPos = atmCoords
@@ -1715,13 +1539,13 @@ spawn(function()
 
                     if autoDeposit then
                         TimeLabel:Set("Status: Depositing...")
-                        pcall(function() remote:InvokeServer(unpack({"Deposit", machineObj})) end)
+                        pcall(function() remote:InvokeServer("Deposit", machineObj) end)
                         task.wait(1.5)
                     end
 
                     if autoCraft then
                         TimeLabel:Set("Status: Crafting...")
-                        pcall(function() remote:InvokeServer(unpack({"Combine", machineObj})) end)
+                        pcall(function() remote:InvokeServer("Combine", machineObj) end)
                         task.wait(2)
                     end
 
@@ -1785,7 +1609,8 @@ Afk:CreateButton({
     Callback = function()
         local m = getActiveMachine()
         if m then
-            game:GetService("ReplicatedStorage"):WaitForChild("Packages"):WaitForChild("Net"):WaitForChild("RF/SpawnMachine.Action"):InvokeServer(unpack({"Withdraw", m}))
+            -- Updated Remote Path for Withdrawal
+            game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Remotes"):WaitForChild("Networking"):WaitForChild("RF/SpawnMachineAction"):InvokeServer("Withdraw", m)
         else
             Rayfield:Notify({Title = "Error", Content = "Machine not found to withdraw from.", Duration = 3})
         end
