@@ -1380,7 +1380,7 @@ local copiedItemID = nil
 local autoEquipEnabled = false
 
 -- Machine Names for Auto-Detection
-local machineNames = {"ATM", "Blackhole", "Arcade", "Valentines"}
+local machineNames = {"ATM", "Blackhole", "Arcade", "Valentines", "Doom"}
 
 -- Updated Path Helper
 local function getMachineFolder()
@@ -1596,7 +1596,7 @@ Afk:CreateDropdown({
 
 Afk:CreateDropdown({
     Name = "Select Machine Mode",
-    Options = {"Default", "All Machine", "ATM", "Blackhole", "Arcade", "Valentines"},
+    Options = {"Default", "All Machine", "ATM", "Blackhole", "Arcade", "Valentines", "Doom"},
     CurrentOption = {"Default"},
     Callback = function(Option) selectedMachine = Option[1] end,
 })
